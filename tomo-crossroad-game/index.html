@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <title>Tomo Crossroad</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+
+    <div id="hud">
+      <div id="score">0</div>
+      <div id="hudRight">
+        <div id="best"></div>
+        <button id="muteBtn" type="button" aria-label="Mute" title="Mute">🔊</button>
+      </div>
+    </div>
+
+    <div id="overlay" class="visible">
+      <div class="panel">
+        <h1>Tomo Crossroad</h1>
+        <p class="tagline">Hop across. Don't get hit.</p>
+        <p class="hint">
+          <span class="desktop-only">Arrows / WASD to move</span>
+          <span class="mobile-only">Tap = forward · Swipe = left / right / back</span>
+        </p>
+        <button id="startBtn" type="button">Play</button>
+        <p id="finalScore" class="hidden"></p>
+      </div>
+    </div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
