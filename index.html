@@ -7,13 +7,16 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#2a1a2e" />
   <title>Tomo Crossroad</title>
-  <link rel="stylesheet" href="style.css?v=v118" />
+  <link rel="stylesheet" href="style.css?v=v119" />
   <!-- Three.js r128 UMD — works with file:// and GitHub Pages (no build step) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
   <div id="app">
     <canvas id="game"></canvas>
+
+    <!-- Play gesture surface: under HUD, above canvas (v1.19) -->
+    <div id="touchPad" aria-hidden="true"></div>
 
     <div id="hud">
       <div id="hudLeft">
@@ -51,7 +54,7 @@
     <div id="overlay" class="visible" data-mode="menu">
       <div class="panel" id="menuPanel">
         <h1>Tomo Crossroad</h1>
-        <p class="version">v1.18</p>
+        <p class="version">v1.19</p>
         <p class="tagline">Hop across. Don't get hit.</p>
 
         <div class="char-select" role="group" aria-label="Character color" id="charSelect">
@@ -91,7 +94,7 @@
 
       <div class="panel hidden" id="optionsPanel">
         <h1>Options</h1>
-        <p class="version">v1.18</p>
+        <p class="version">v1.19</p>
 
         <div class="opt-section">
           <p class="opt-label">Music track</p>
@@ -172,7 +175,7 @@
 
       <div class="panel hidden" id="leaderboardPanel">
         <h1>Leaderboard</h1>
-        <p class="version">v1.18</p>
+        <p class="version">v1.19</p>
         <p class="tagline lb-subtitle">Global · Best scores from all players (online).</p>
         <p id="leaderboardStatus" class="lb-status" aria-live="polite"></p>
         <ol id="leaderboardList" class="lb-list" aria-live="polite"></ol>
@@ -184,7 +187,7 @@
 
       <div class="panel hidden" id="pausePanel">
         <h1>Paused</h1>
-        <p class="version">v1.18</p>
+        <p class="version">v1.19</p>
         <p class="tagline">Take a breath.</p>
         <div class="btn-row">
           <button id="resumeBtn" type="button">Resume</button>
@@ -207,6 +210,6 @@
       </div>
     </div>
   </div>
-  <script src="game.js?v=v118"></script>
+  <script src="game.js?v=v119"></script>
 </body>
 </html>

@@ -3839,6 +3839,7 @@
     overlay.dataset.mode = "leaderboard";
     if (leaderboardPanel) leaderboardPanel.classList.remove("hidden");
     overlay.classList.add("visible");
+    syncTouchPad();
     // Show local cache immediately, then try online
     renderLeaderboard(loadLeaderboard());
     setLeaderboardStatus("Syncing…", "syncing");
@@ -3931,9 +3932,11 @@
   }
 
   function syncPauseBtn() {
-    if (!pauseBtn) return;
-    const show = playing && !gameOver;
-    pauseBtn.classList.toggle("hidden", !show);
+    if (pauseBtn) {
+      const show = playing && !gameOver;
+      pauseBtn.classList.toggle("hidden", !show);
+    }
+    syncTouchPad();
   }
 
   function hideAllPanels() {
@@ -3976,6 +3979,7 @@
     syncVolumeUi();
     syncTrackUi();
     syncKeymapUi();
+    syncTouchPad();
   }
 
   function showPause() {
@@ -4038,6 +4042,7 @@
   function hideOverlay() {
     cancelRemap();
     overlay.classList.remove("visible");
+    syncTouchPad();
   }
 
   function syncVolumeUi() {
@@ -4292,13 +4297,21 @@
     tryHop(m[0], m[1]);
   });
 
-  // ─── Input: pointer / touch on #app play surface (v1.15+) ──
-  // Attach to #app (not only canvas) so Android hits that land on HUD /
-  // overlay siblings still bubble here. Pointer Events preferred; touch fallback.
+  // ─── Input: pointer + touch on #touchPad (v1.19) ───────────
+  // Root cause (v1.15–v1.18): preventDefault() on pointerdown during play
+  // cancelled the pointer on many Android Chrome/WebViews (pointercancel),
+  // cleared gestureStart, so pointerup never hopped. Touch fallback was
+  // never registered when PointerEvent existed.
+  // Fix: no preventDefault on pointerdown/touchstart; dedicated #touchPad;
+  // register BOTH pointer and touch with a short dedupe window.
   const appEl = document.getElementById("app");
+  const touchPad = document.getElementById("touchPad");
   let gestureStart = null;
   let gestureHandled = false; // suppress synthetic click after pointer/touch hop
-  const SWIPE_THRESH = 28;
+  const SWIPE_THRESH = 20;
+  const GESTURE_DEDUPE_MS = 100;
+  let lastGestureStartAt = 0;
+  let lastGestureEndAt = 0;
   const UI_GESTURE_IGNORE =
     "button, input, textarea, select, a, label, .hud-icon-btn, .panel, .char-select, .char-carousel, .char-stage, .char-nav, .char-dot, .track-btn, .keymap-row";
 
@@ -4309,6 +4322,12 @@
   function isInteractiveTarget(target) {
     if (!target || typeof target.closest !== "function") return false;
     return !!target.closest(UI_GESTURE_IGNORE);
+  }
+
+  function syncTouchPad() {
+    if (!touchPad) return;
+    const active = !!(playing && !paused && !gameOver && !overlayIsVisible());
+    touchPad.classList.toggle("active", active);
   }
 
   function markGestureHandled() {
@@ -4331,7 +4350,7 @@
     }
   }
 
-  function onPlayGestureStart(clientX, clientY, target, ev) {
+  function onPlayGestureStart(clientX, clientY, target, ev, source) {
     if (isInteractiveTarget(target)) {
       gestureStart = null;
       return;
@@ -4341,7 +4360,10 @@
     // Game over: track tap on non-UI (e.g. backdrop) for play-again.
     if (overlayIsVisible()) {
       if (!paused && overlay.dataset.mode === "gameover") {
-        gestureStart = { x: clientX, y: clientY, t: performance.now(), mode: "gameover" };
+        const now = performance.now();
+        if (gestureStart && now - lastGestureStartAt < GESTURE_DEDUPE_MS) return;
+        gestureStart = { x: clientX, y: clientY, t: now, mode: "gameover", source: source || "unknown" };
+        lastGestureStartAt = now;
       } else {
         gestureStart = null;
       }
@@ -4353,16 +4375,27 @@
       return;
     }
 
-    gestureStart = { x: clientX, y: clientY, t: performance.now(), mode: "play" };
-    if (ev && ev.cancelable) {
-      try { ev.preventDefault(); } catch (_) { /* ignore */ }
-    }
+    // Dedupe pointer↔touch pair for the same physical contact
+    const now = performance.now();
+    if (gestureStart && now - lastGestureStartAt < GESTURE_DEDUPE_MS) return;
+
+    gestureStart = { x: clientX, y: clientY, t: now, mode: "play", source: source || "unknown" };
+    lastGestureStartAt = now;
+    // Do NOT preventDefault on start — that cancels pointers on Android Chrome.
   }
 
-  function onPlayGestureEnd(clientX, clientY, ev) {
+  function onPlayGestureEnd(clientX, clientY, ev, source) {
     if (!gestureStart) return;
+    // First end wins; sibling pointer/touch end within dedupe window is ignored
+    const now = performance.now();
+    if (lastGestureEndAt > 0 && now - lastGestureEndAt < GESTURE_DEDUPE_MS) {
+      gestureStart = null;
+      return;
+    }
+
     const start = gestureStart;
     gestureStart = null;
+    lastGestureEndAt = now;
     const dx = clientX - start.x;
     const dy = clientY - start.y;
 
@@ -4389,45 +4422,67 @@
     }
   }
 
-  function onPlayGestureCancel() {
+  function onPlayGestureCancel(source) {
+    if (!gestureStart) return;
+    // pointercancel on Android often follows a cancelled pointer after preventDefault
+    // (or browser quirks). Keep the gesture so the parallel touchend can still hop.
+    if (source === "pointer") return;
+    if (source && gestureStart.source && source !== gestureStart.source) return;
     gestureStart = null;
   }
 
-  const supportsPointer = typeof window.PointerEvent !== "undefined";
+  function bindPlayGestures(el, opts) {
+    if (!el) return;
+    const playOnly = !!(opts && opts.playOnly);
+    const stopBubble = !!(opts && opts.stopBubble);
 
-  if (supportsPointer) {
-    appEl.addEventListener("pointerdown", (e) => {
+    el.addEventListener("pointerdown", (e) => {
       if (e.isPrimary === false) return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
-      onPlayGestureStart(e.clientX, e.clientY, e.target, e);
-    }, { passive: false });
-
-    appEl.addEventListener("pointerup", (e) => {
-      if (e.isPrimary === false) return;
-      onPlayGestureEnd(e.clientX, e.clientY, e);
-    }, { passive: false });
-
-    appEl.addEventListener("pointercancel", () => {
-      onPlayGestureCancel();
+      if (playOnly && overlayIsVisible()) return;
+      if (stopBubble) e.stopPropagation();
+      onPlayGestureStart(e.clientX, e.clientY, e.target, e, "pointer");
     }, { passive: true });
-  } else {
-    // Older Android WebViews without Pointer Events
-    appEl.addEventListener("touchstart", (e) => {
-      if (e.touches.length !== 1) return;
+
+    el.addEventListener("pointerup", (e) => {
+      if (e.isPrimary === false) return;
+      if (playOnly && overlayIsVisible()) return;
+      if (stopBubble) e.stopPropagation();
+      onPlayGestureEnd(e.clientX, e.clientY, e, "pointer");
+    }, { passive: false });
+
+    el.addEventListener("pointercancel", (e) => {
+      if (stopBubble && e) e.stopPropagation();
+      onPlayGestureCancel("pointer");
+    }, { passive: true });
+
+    // Always register touch as well (Android backup when pointer is cancelled)
+    el.addEventListener("touchstart", (e) => {
+      if (!e.touches || e.touches.length !== 1) return;
       const t = e.touches[0];
-      onPlayGestureStart(t.clientX, t.clientY, e.target, e);
-    }, { passive: false });
+      if (playOnly && overlayIsVisible()) return;
+      if (stopBubble) e.stopPropagation();
+      onPlayGestureStart(t.clientX, t.clientY, e.target, e, "touch");
+    }, { passive: true });
 
-    appEl.addEventListener("touchend", (e) => {
-      const t = e.changedTouches[0];
+    el.addEventListener("touchend", (e) => {
+      const t = e.changedTouches && e.changedTouches[0];
       if (!t) return;
-      onPlayGestureEnd(t.clientX, t.clientY, e);
+      if (playOnly && overlayIsVisible()) return;
+      if (stopBubble) e.stopPropagation();
+      onPlayGestureEnd(t.clientX, t.clientY, e, "touch");
     }, { passive: false });
 
-    appEl.addEventListener("touchcancel", () => {
-      onPlayGestureCancel();
+    el.addEventListener("touchcancel", (e) => {
+      if (stopBubble && e) e.stopPropagation();
+      onPlayGestureCancel("touch");
     }, { passive: true });
   }
+
+  // Primary: #touchPad (active only while playing with overlay hidden)
+  bindPlayGestures(touchPad, { playOnly: true, stopBubble: true });
+  // Backup: #app (also handles game-over backdrop taps via bubbling)
+  bindPlayGestures(appEl, { playOnly: false });
 
   // Desktop click / mouse fallback; ignore if pointer/touch already hopped
   appEl.addEventListener("click", (e) => {
@@ -4443,13 +4498,17 @@
   });
 
   // Block page scroll/zoom on the play surface during a run (not on overlays/UI)
-  appEl.addEventListener("touchmove", (e) => {
+  function onPlayTouchMove(e) {
     if (isInteractiveTarget(e.target)) return;
     if (overlayIsVisible()) return;
     if (playing && !paused) {
       e.preventDefault();
     }
-  }, { passive: false });
+  }
+  appEl.addEventListener("touchmove", onPlayTouchMove, { passive: false });
+  if (touchPad) {
+    touchPad.addEventListener("touchmove", onPlayTouchMove, { passive: false });
+  }
 
   // ─── UI ───────────────────────────────────────────────────
   function beginPlay() {

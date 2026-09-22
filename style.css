@@ -39,6 +39,21 @@ html, body {
   touch-action: none;
 }
 
+
+/* Full-screen play gesture pad (v1.19) — under HUD (z15), above canvas (z1) */
+#touchPad {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  touch-action: none;
+  pointer-events: none;
+  background: transparent;
+}
+
+#touchPad.active {
+  pointer-events: auto;
+}
+
 /* Android / mobile: allow tap synthesis on UI; play surface keeps touch-action:none */
 button,
 input,

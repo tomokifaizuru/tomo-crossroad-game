@@ -56,7 +56,7 @@ During a run, **Pause** (HUD ⏸ or **Esc**) freezes cars, hops, and score. A **
 
 Before each run you get a **main menu** with:
 
-- Title **Tomo Crossroad** · version **v1.17**
+- Title **Tomo Crossroad** · version **v1.19**
 - **Player name** field (max 12 chars, saved as `tomo-crossroad-player-name`; empty → **Player**)
 - **Cap Kid color** carousel — swipe or ◀ ▶ between 5 colorways (large preview + dots); persisted via `tomo-crossroad-character`
 - **Play**, **Leaderboard**, and **Options** buttons
@@ -136,6 +136,16 @@ Real **PerspectiveCamera** behind/above the player, looking forward along the ho
 - Cap Kid richer **idle** (breathe, weight shift, arm sway, blink) and **hop** squash-stretch / limb tuck on menu and in-run
 
 ## Changelog
+
+### v1.19
+- **Mobile tap/swipe restored** — root cause: `preventDefault()` on `pointerdown` cancelled the pointer on many Android Chrome/WebViews (`pointercancel`), clearing `gestureStart` so `pointerup` never hopped; touch fallback was skipped whenever `PointerEvent` existed
+- Dedicated full-screen `#touchPad` under the HUD (`z-index: 10`, `touch-action: none`); `pointer-events: auto` only while playing with overlay hidden (`.active`)
+- Register **both** Pointer and Touch listeners with ~100ms dedupe so one gesture does not double-hop
+- Do **not** `preventDefault` on `pointerdown` / `touchstart`; keep scroll blocking via `touch-action: none` + `touchmove` preventDefault only during active play
+- Lower `SWIPE_THRESH` to **20** for phones; HUD pause/mute stay above the pad
+- Menu / options / pause: touchPad inactive; game-over backdrop tap-to-replay unchanged; keyboard + desktop click kept
+- Keeps v1.18 freeze fix (no fisher call; frame loop try/catch)
+- Menu / Options / Pause / Leaderboard / cache-bust **v1.19**
 
 ### v1.18
 - Fix: game froze after the first hop because a removed fisher spawn call still ran and crashed the loop.
