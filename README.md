@@ -56,7 +56,7 @@ During a run, **Pause** (HUD ⏸ or **Esc**) freezes cars, hops, and score. A **
 
 Before each run you get a **main menu** with:
 
-- Title **Tomo Crossroad** · version **v1.19**
+- Title **Tomo Crossroad** · version **v1.20**
 - **Player name** field (max 12 chars, saved as `tomo-crossroad-player-name`; empty → **Player**)
 - **Cap Kid color** carousel — swipe or ◀ ▶ between 5 colorways (large preview + dots); persisted via `tomo-crossroad-character`
 - **Play**, **Leaderboard**, and **Options** buttons
@@ -71,6 +71,7 @@ Before each run you get a **main menu** with:
 - **Key Mapping** — click a bind → press a key; persists as `tomo-crossroad-keymap`; **Reset controls** restores defaults
 - Defaults after the v1.04 L/R invert: Left = ArrowLeft / A → **+col** (screen-left); Right = ArrowRight / D → **−col** (screen-right)
 - Touch swipes use the same screen L/R invert (swipe left → screen-left)
+- **Mobile buttons** (v1.20) — on-screen Left / Forward / Right; same hop mapping as keys/swipes
 
 | Id | Label | Look |
 |----|-------|------|
@@ -136,6 +137,16 @@ Real **PerspectiveCamera** behind/above the player, looking forward along the ho
 - Cap Kid richer **idle** (breathe, weight shift, arm sway, blink) and **hop** squash-stretch / limb tuck on menu and in-run
 
 ## Changelog
+
+### v1.20
+- **Mobile on-screen buttons** — fixed `#mobileControls` bar at the bottom of `#app` with three large tap targets: **← Left**, **↑ GO** (forward), **Right →**
+- Mapping matches keyboard/swipe (v1.04 inverted camera): Left → `tryHop(1,0)`, Forward → `tryHop(0,1)`, Right → `tryHop(-1,0)`
+- Visible on touch / coarse pointer by default; hidden with `@media (hover: hover) and (pointer: fine)` (same pattern as `.mobile-only`)
+- `pointerdown` / `touchstart` with `{ passive: false }` + `preventDefault` (plus `click` fallback); only hops while playing with overlay hidden (`canControl`, countdown, pause respected via `tryHop`)
+- `z-index: 20` above `#touchPad`; touchPad gets a bottom inset so the bar is not covered; swipe/tap on empty area above buttons still works
+- Menu hint: **Tap buttons · Left / Forward / Right**; no Down button; keyboard unchanged
+- Keeps hearts, headlights, skyline, Custom Track, Android freeze / touchPad fixes
+- Menu / Options / Pause / Leaderboard / cache-bust **v1.20**
 
 ### v1.19
 - **Mobile tap/swipe restored** — root cause: `preventDefault()` on `pointerdown` cancelled the pointer on many Android Chrome/WebViews (`pointercancel`), clearing `gestureStart` so `pointerup` never hopped; touch fallback was skipped whenever `PointerEvent` existed

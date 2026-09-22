@@ -40,10 +40,14 @@ html, body {
 }
 
 
-/* Full-screen play gesture pad (v1.19) — under HUD (z15), above canvas (z1) */
+/* Full-screen play gesture pad (v1.19+) — under HUD (z15), above canvas (z1) */
+/* Bottom inset leaves room for #mobileControls on touch devices (v1.20) */
 #touchPad {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   z-index: 10;
   touch-action: none;
   pointer-events: none;
@@ -52,6 +56,61 @@ html, body {
 
 #touchPad.active {
   pointer-events: auto;
+}
+
+/* On-screen Left / Forward / Right (v1.20) — above touchPad, below overlay */
+#mobileControls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, rgba(8, 10, 20, 0.72) 0%, rgba(8, 10, 20, 0.45) 70%, rgba(8, 10, 20, 0) 100%);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease;
+}
+
+#mobileControls.active {
+  pointer-events: auto;
+  opacity: 1;
+  visibility: visible;
+}
+
+.mobile-ctrl-btn {
+  flex: 1 1 0;
+  min-height: 60px;
+  min-width: 0;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-radius: 14px;
+  background: rgba(20, 28, 48, 0.78);
+  color: #fff;
+  font-size: clamp(15px, 4.2vw, 18px);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.mobile-ctrl-btn:active,
+.mobile-ctrl-btn.pressed {
+  background: rgba(78, 205, 196, 0.35);
+  border-color: rgba(78, 205, 196, 0.85);
+  transform: scale(0.97);
+}
+
+.mobile-ctrl-fwd {
+  background: rgba(78, 205, 196, 0.22);
+  border-color: rgba(78, 205, 196, 0.55);
 }
 
 /* Android / mobile: allow tap synthesis on UI; play surface keeps touch-action:none */
@@ -66,6 +125,7 @@ a,
 .char-dot,
 .track-btn,
 .keymap-row,
+.mobile-ctrl-btn,
 #overlay.visible {
   touch-action: manipulation;
 }
@@ -1022,6 +1082,8 @@ a,
 @media (hover: hover) and (pointer: fine) {
   .desktop-only { display: inline; }
   .mobile-only { display: none; }
+  #mobileControls { display: none !important; }
+  #touchPad { bottom: 0; }
   #startBtn:hover,
   #againBtn:hover,
   #resumeBtn:hover {

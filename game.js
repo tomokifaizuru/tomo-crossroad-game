@@ -4297,7 +4297,7 @@
     tryHop(m[0], m[1]);
   });
 
-  // ─── Input: pointer + touch on #touchPad (v1.19) ───────────
+  // ─── Input: pointer + touch on #touchPad (v1.19) + mobile buttons (v1.20) ───
   // Root cause (v1.15–v1.18): preventDefault() on pointerdown during play
   // cancelled the pointer on many Android Chrome/WebViews (pointercancel),
   // cleared gestureStart, so pointerup never hopped. Touch fallback was
@@ -4313,7 +4313,7 @@
   let lastGestureStartAt = 0;
   let lastGestureEndAt = 0;
   const UI_GESTURE_IGNORE =
-    "button, input, textarea, select, a, label, .hud-icon-btn, .panel, .char-select, .char-carousel, .char-stage, .char-nav, .char-dot, .track-btn, .keymap-row";
+    "button, input, textarea, select, a, label, .hud-icon-btn, .panel, .char-select, .char-carousel, .char-stage, .char-nav, .char-dot, .track-btn, .keymap-row, #mobileControls, .mobile-ctrl-btn";
 
   function overlayIsVisible() {
     return !!(overlay && overlay.classList.contains("visible"));
@@ -4325,9 +4325,13 @@
   }
 
   function syncTouchPad() {
-    if (!touchPad) return;
     const active = !!(playing && !paused && !gameOver && !overlayIsVisible());
-    touchPad.classList.toggle("active", active);
+    if (touchPad) touchPad.classList.toggle("active", active);
+    const mc = document.getElementById("mobileControls");
+    if (mc) {
+      mc.classList.toggle("active", active);
+      mc.setAttribute("aria-hidden", active ? "false" : "true");
+    }
   }
 
   function markGestureHandled() {
@@ -4509,6 +4513,72 @@
   if (touchPad) {
     touchPad.addEventListener("touchmove", onPlayTouchMove, { passive: false });
   }
+
+  // ─── Mobile on-screen hop buttons (v1.20) ─────────────────
+  // Primary UX on touch/coarse devices; touchPad stays as backup above the bar.
+  // pointerdown/touchstart with preventDefault avoids 300ms delay / ghost clicks.
+  function bindMobileHopBtn(el, dx, dy) {
+    if (!el) return;
+    let armed = false;
+
+    function canMobileHop() {
+      return !!(playing && !gameOver && !paused && canControl && !countdownActive && !overlayIsVisible());
+    }
+
+    function fire(ev) {
+      if (!canMobileHop()) return;
+      tryHop(dx, dy);
+      markGestureHandled();
+      if (ev && ev.cancelable) {
+        try { ev.preventDefault(); } catch (_) { /* ignore */ }
+      }
+      if (ev && typeof ev.stopPropagation === "function") ev.stopPropagation();
+    }
+
+    function pressVisual(on) {
+      el.classList.toggle("pressed", !!on);
+    }
+
+    el.addEventListener("pointerdown", (e) => {
+      if (e.isPrimary === false) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      armed = true;
+      pressVisual(true);
+      fire(e);
+    }, { passive: false });
+
+    el.addEventListener("pointerup", () => { armed = false; pressVisual(false); }, { passive: true });
+    el.addEventListener("pointercancel", () => { armed = false; pressVisual(false); }, { passive: true });
+    el.addEventListener("pointerleave", () => { pressVisual(false); }, { passive: true });
+
+    el.addEventListener("touchstart", (e) => {
+      // Backup when pointer events are flaky; dedupe via markGestureHandled + tryHop gates
+      if (armed) {
+        if (e.cancelable) { try { e.preventDefault(); } catch (_) {} }
+        e.stopPropagation();
+        return;
+      }
+      pressVisual(true);
+      fire(e);
+    }, { passive: false });
+
+    el.addEventListener("touchend", () => { pressVisual(false); }, { passive: true });
+    el.addEventListener("touchcancel", () => { pressVisual(false); }, { passive: true });
+
+    el.addEventListener("click", (e) => {
+      // Fallback for environments that only synthesize click
+      if (gestureHandled) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      fire(e);
+    });
+  }
+
+  bindMobileHopBtn(document.getElementById("btnHopLeft"), 1, 0);
+  bindMobileHopBtn(document.getElementById("btnHopForward"), 0, 1);
+  bindMobileHopBtn(document.getElementById("btnHopRight"), -1, 0);
 
   // ─── UI ───────────────────────────────────────────────────
   function beginPlay() {
