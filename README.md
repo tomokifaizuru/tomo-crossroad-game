@@ -1,5 +1,7 @@
 # Tomo Crossroad
 
+**[▶ Play now](https://tomokifaizuru.github.io/tomo-crossroad-game/)** — open on phone or desktop to test the latest build.
+
 Version: **1.21**
 
 A Crossy Road–style hop-across-the-road game with **real Three.js 3D**. Mobile browsers (desktop too). Plain HTML + CSS + vanilla JavaScript + Three.js via CDN — **no build step**, no frameworks.
