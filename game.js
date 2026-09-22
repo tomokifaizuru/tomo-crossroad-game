@@ -207,7 +207,17 @@
   const runTimerEl = document.getElementById("runTimer");
   const speechBubble = document.getElementById("speechBubble");
   const speechBubbleText = document.getElementById("speechBubbleText");
-  const charCards = Array.from(document.querySelectorAll(".char-card"));
+  const charSelectEl = document.getElementById("charSelect");
+  const charCarouselEl = document.getElementById("charCarousel");
+  const charStageEl = document.getElementById("charStage");
+  const charPreviewCanvas = document.getElementById("charPreviewCanvas");
+  const charNameLabel = document.getElementById("charNameLabel");
+  const charPrevBtn = document.getElementById("charPrevBtn");
+  const charNextBtn = document.getElementById("charNextBtn");
+  const charDots = Array.from(document.querySelectorAll(".char-dot"));
+  const heartsEl = document.getElementById("hearts");
+  const hitFlashEl = document.getElementById("hitFlash");
+  const CHAR_ORDER = ["capkid", "red", "green", "purple", "yellow"];
   const volumeSlider = document.getElementById("volumeSlider");
   const volumeValue = document.getElementById("volumeValue");
   const sfxVolumeSlider = document.getElementById("sfxVolumeSlider");
@@ -237,6 +247,11 @@
   let lastTs = 0;
   let hopQueue = [];
   let shake = 0;
+  let hearts = 3;
+  const MAX_HEARTS = 3;
+  const HIT_INVULN_SEC = 1.1;
+  let invulnTimer = 0; // seconds remaining; skip checkHit damage while > 0
+  let hitFlashTimer = 0;
   let deathFade = 0; // 0 = idle; else elapsed seconds since hit
   let deathOverlayTimer = 0;
   let playerFadeMats = [];
@@ -276,6 +291,14 @@
   const FISHER_NEAR_ROWS = 4;
   const FISHER_LINE_SEC = 3.6;
   const _fisherProj = new THREE.Vector3();
+  let fisherNextScore = null; // score threshold for next fisher spawn
+  let fisherSoftCol = null; // soft-block col on fisher.row while active
+
+  // Tomo Shop roadside ads (v1.14)
+  let tomoShopTex = null;
+  let adSigns = []; // { row, col, mesh, soft }
+  let nextAdScore = 99999; // next score band to place an ad (set in resetAdSchedule)
+  let adsEverPlaced = 0;
 
   const SKY_PHASE_SEC = 30;
   const SKY_LERP_SEC = 2.5;
@@ -438,7 +461,31 @@
   rim.position.set(-6, 6, -4);
   scene.add(rim);
 
-  // ─── Sky cycle palettes & soft sky props (v1.13) ───────────
+  // Tomo Shop ad texture (GitHub Pages + local relative path)
+  try {
+    const _texLoader = new THREE.TextureLoader();
+    _texLoader.load(
+      "assets/tomo-shop.png",
+      (tex) => {
+        tex.magFilter = THREE.LinearFilter;
+        tex.minFilter = THREE.LinearFilter;
+        tomoShopTex = tex;
+        // Refresh any ads that spawned before the bitmap arrived
+        for (const ad of adSigns) {
+          if (ad.mesh && ad.mesh.userData && ad.mesh.userData.adFaceMats) {
+            for (const m of ad.mesh.userData.adFaceMats) {
+              m.map = tex;
+              m.needsUpdate = true;
+            }
+          }
+        }
+      },
+      undefined,
+      () => console.warn("Tomo Shop texture failed to load (assets/tomo-shop.png)")
+    );
+  } catch (_) {}
+
+  // ─── Sky cycle palettes & soft sky props (v1.14) ───────────
   const SKY_PALETTES = [
     {
       id: "day",
@@ -455,6 +502,7 @@
       rimInt: 0.22,
       cloudTint: "#ffffff",
       cloudOp: 0.45,
+      lampGlow: 0,
       sunMeshY: 14,
       sunMeshScale: 1,
       sunVisible: 1,
@@ -478,6 +526,7 @@
       rimInt: 0.3,
       cloudTint: "#ffd0b8",
       cloudOp: 0.5,
+      lampGlow: 0.28,
       sunMeshY: 3.2,
       sunMeshScale: 1.35,
       sunVisible: 1,
@@ -501,6 +550,7 @@
       rimInt: 0.38,
       cloudTint: "#d8e0f5",
       cloudOp: 0.1,
+      lampGlow: 1,
       sunMeshY: -2,
       sunMeshScale: 0.6,
       sunVisible: 0,
@@ -538,7 +588,7 @@
       out[k] = "#" + lerpHex(A[k], B[k], t, _tmpColC).getHexString();
     }
     const numKeys = [
-      "hemiInt", "sunInt", "ambientInt", "rimInt", "cloudOp",
+      "hemiInt", "sunInt", "ambientInt", "rimInt", "cloudOp", "lampGlow",
       "sunMeshY", "sunMeshScale", "sunVisible", "moonVisible",
       "birdsVisible", "starsVisible", "skylineVisible",
     ];
@@ -550,13 +600,16 @@
   scene.add(skyRoot);
   let sunMeshGroup = null;
   let moonMeshGroup = null;
-  let cloudsGroup = null;
   let birdsGroup = null;
   let starsGroup = null;
   let skylineGroup = null;
-  const cloudDrift = [];
   const birdFlocks = [];
   const starTwinkle = [];
+  // Street lamps (row props + pooled PointLights near player)
+  const streetLamps = []; // { bulb, glass, row, sideX }
+  const LAMP_POINT_POOL = 5;
+  const lampPointLights = [];
+  let lastLampGlow = 0;
 
   function blockMat(hex, opts) {
     const o = opts || {};
@@ -620,36 +673,6 @@
     return g;
   }
 
-  function buildCloud(seed) {
-    const g = new THREE.Group();
-    const op = 0.38 + (seed % 5) * 0.04;
-    // Soft billowy spheres (shared material so palette tint/opacity stay in sync)
-    const m = new THREE.MeshLambertMaterial({
-      color: new THREE.Color("#ffffff"),
-      transparent: true,
-      opacity: op,
-      depthWrite: false,
-      flatShading: false,
-    });
-    // [radius, x, y, z]
-    const pieces = [
-      [0.95, 0, 0, 0],
-      [0.72, 0.85, 0.08, 0.12],
-      [0.68, -0.9, -0.02, -0.08],
-      [0.58, 0.2, 0.42, 0.06],
-      [0.52, -0.35, 0.38, -0.1],
-      [0.48, 0.55, -0.12, -0.2],
-      [0.44, -0.55, -0.15, 0.18],
-    ];
-    for (const p of pieces) {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(p[0], 12, 10), m);
-      mesh.position.set(p[1], p[2], p[3]);
-      g.add(mesh);
-    }
-    g.userData.baseMats = [m];
-    return g;
-  }
-
   function buildBird() {
     const g = new THREE.Group();
     const body = blockMat("#2b2d42");
@@ -694,19 +717,6 @@
     moonMeshGroup.position.set(-8, 13, 18);
     moonMeshGroup.visible = false;
     skyRoot.add(moonMeshGroup);
-
-    cloudsGroup = new THREE.Group();
-    skyRoot.add(cloudsGroup);
-    for (let i = 0; i < 7; i++) {
-      const c = buildCloud(i * 17 + 3);
-      const x = -14 + i * 4.5 + (i % 2) * 1.2;
-      const y = 8 + (i % 3) * 1.6;
-      const z = 12 + (i % 4) * 3.5;
-      c.position.set(x, y, z);
-      c.scale.setScalar(0.85 + (i % 3) * 0.2);
-      cloudsGroup.add(c);
-      cloudDrift.push({ mesh: c, speed: 0.35 + (i % 4) * 0.12, baseX: x, span: 28 });
-    }
 
     birdsGroup = new THREE.Group();
     skyRoot.add(birdsGroup);
@@ -796,15 +806,7 @@
       });
     }
     if (birdsGroup) birdsGroup.visible = p.birdsVisible > 0.05;
-    if (cloudsGroup) {
-      cloudsGroup.visible = p.cloudOp > 0.05;
-      cloudsGroup.traverse((ch) => {
-        if (ch.isMesh && ch.material && ch.material.transparent) {
-          ch.material.opacity = p.cloudOp;
-          ch.material.color.set(p.cloudTint);
-        }
-      });
-    }
+    applyStreetLampGlow(p.lampGlow != null ? p.lampGlow : 0);
     if (starsGroup) {
       starsGroup.visible = p.starsVisible > 0.05;
       starsGroup.traverse((ch) => {
@@ -857,12 +859,8 @@
       }
     }
 
-    // Prop motion (clouds / birds / stars) — runs whenever not paused
+    // Prop motion (birds / stars) — runs whenever not paused
     if (!paused) {
-      for (const c of cloudDrift) {
-        c.mesh.position.x += c.speed * dt;
-        if (c.mesh.position.x > c.span * 0.5) c.mesh.position.x = -c.span * 0.5;
-      }
       const t = performance.now() * 0.001;
       for (const f of birdFlocks) {
         f.group.position.x += f.speed * dt;
@@ -1112,14 +1110,15 @@
       new THREE.BoxGeometry(bodyW * 0.45, 0.22, 0.42),
       mat(shadeHex(colorHex, -25), { flat: true })
     );
-    cabin.position.set(dir > 0 ? bodyW * 0.08 : -bodyW * 0.08, 0.5, 0);
+    // Always build facing +X; lane direction is mesh.rotation.y only (v1.16)
+    cabin.position.set(bodyW * 0.08, 0.5, 0);
     cabin.castShadow = true;
     g.add(cabin);
     const glass = new THREE.Mesh(
       new THREE.BoxGeometry(bodyW * 0.12, 0.14, 0.36),
       mat("#a8d8ea", { flat: true })
     );
-    glass.position.set(dir > 0 ? bodyW * 0.28 : -bodyW * 0.28, 0.48, 0);
+    glass.position.set(bodyW * 0.28, 0.48, 0);
     g.add(glass);
     const wheelGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.08, 8);
     const wheelMat = mat("#171725", { flat: true });
@@ -1133,7 +1132,7 @@
       new THREE.BoxGeometry(0.06, 0.08, 0.14),
       mat("#fff3a3")
     );
-    hl.position.set(dir > 0 ? bodyW * 0.48 : -bodyW * 0.48, 0.28, 0);
+    hl.position.set(bodyW * 0.48, 0.28, 0);
     g.add(hl);
     g.userData.bodyW = bodyW;
     g.userData.kind = "car";
@@ -1145,8 +1144,9 @@
     const bodyW = width * CELL * 0.94;
     const cabW = Math.min(0.85, bodyW * 0.32);
     const cargoW = bodyW - cabW - 0.06;
-    const cabX = dir > 0 ? bodyW * 0.5 - cabW * 0.5 : -bodyW * 0.5 + cabW * 0.5;
-    const cargoX = dir > 0 ? -bodyW * 0.5 + cargoW * 0.5 : bodyW * 0.5 - cargoW * 0.5;
+    // Always +X forward (cab leads +X); orient via rotation.y (v1.16)
+    const cabX = bodyW * 0.5 - cabW * 0.5;
+    const cargoX = -bodyW * 0.5 + cargoW * 0.5;
     const cargo = new THREE.Mesh(
       new THREE.BoxGeometry(cargoW, 0.72, 0.7),
       mat(shadeHex(colorHex, -15), { flat: true })
@@ -1165,7 +1165,7 @@
       new THREE.BoxGeometry(cabW * 0.28, 0.22, 0.48),
       mat("#a8d8ea", { flat: true })
     );
-    glass.position.set(dir > 0 ? cabX + cabW * 0.28 : cabX - cabW * 0.28, 0.5, 0);
+    glass.position.set(cabX + cabW * 0.28, 0.5, 0);
     g.add(glass);
     const wheelGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.1, 8);
     const wheelMat = mat("#171725", { flat: true });
@@ -1182,7 +1182,7 @@
       new THREE.BoxGeometry(0.07, 0.1, 0.16),
       mat("#fff3a3")
     );
-    hl.position.set(dir > 0 ? bodyW * 0.48 : -bodyW * 0.48, 0.32, 0);
+    hl.position.set(bodyW * 0.48, 0.32, 0);
     g.add(hl);
     g.userData.bodyW = bodyW;
     g.userData.kind = "truck";
@@ -1203,28 +1203,28 @@
       new THREE.BoxGeometry(bodyW * 0.35, 0.16, 0.2),
       mat(shadeHex(colorHex, 20), { flat: true })
     );
-    tank.position.set(dir > 0 ? -0.02 : 0.02, 0.38, 0);
+    tank.position.set(-0.02, 0.38, 0);
     g.add(tank);
     const seat = new THREE.Mesh(
       new THREE.BoxGeometry(bodyW * 0.28, 0.1, 0.2),
       mat("#2b2d42", { flat: true })
     );
-    seat.position.set(dir > 0 ? -bodyW * 0.12 : bodyW * 0.12, 0.36, 0);
+    seat.position.set(-bodyW * 0.12, 0.36, 0);
     g.add(seat);
     const wheelGeo = new THREE.BoxGeometry(0.16, 0.16, 0.08);
     const wheelMat = mat("#171725", { flat: true });
     const front = new THREE.Mesh(wheelGeo, wheelMat);
-    front.position.set(dir > 0 ? bodyW * 0.32 : -bodyW * 0.32, 0.14, 0);
+    front.position.set(bodyW * 0.32, 0.14, 0);
     g.add(front);
     const rear = new THREE.Mesh(wheelGeo, wheelMat);
-    rear.position.set(dir > 0 ? -bodyW * 0.28 : bodyW * 0.28, 0.14, 0);
+    rear.position.set(-bodyW * 0.28, 0.14, 0);
     g.add(rear);
     // rider cube (chibi)
     const rider = new THREE.Mesh(
       new THREE.BoxGeometry(0.2, 0.28, 0.18),
       mat("#ffb4a2", { flat: true })
     );
-    rider.position.set(dir > 0 ? -bodyW * 0.06 : bodyW * 0.06, 0.55, 0);
+    rider.position.set(-bodyW * 0.06, 0.55, 0);
     rider.castShadow = true;
     g.add(rider);
     const helmet = new THREE.Mesh(
@@ -1237,7 +1237,7 @@
       new THREE.BoxGeometry(0.05, 0.06, 0.08),
       mat("#fff3a3")
     );
-    hl.position.set(dir > 0 ? bodyW * 0.38 : -bodyW * 0.38, 0.3, 0);
+    hl.position.set(bodyW * 0.38, 0.3, 0);
     g.add(hl);
     g.userData.bodyW = bodyW;
     g.userData.kind = "moto";
@@ -1245,11 +1245,13 @@
   }
 
   function makeVehicle(car, dir) {
+    // Mesh parts always face +X; caller sets rotation.y from lane dir (v1.16)
+    void dir;
     const kind = car.kind || "car";
     let mesh;
-    if (kind === "truck") mesh = makeTruck(car.color, car.w, dir);
-    else if (kind === "moto") mesh = makeMotorcycle(car.color, car.w, dir);
-    else mesh = makeCar(car.color, car.w, dir);
+    if (kind === "truck") mesh = makeTruck(car.color, car.w, 1);
+    else if (kind === "moto") mesh = makeMotorcycle(car.color, car.w, 1);
+    else mesh = makeCar(car.color, car.w, 1);
     mesh.userData.kind = kind;
     mesh.userData.w = car.w;
     return mesh;
@@ -1369,61 +1371,129 @@
 
   function clearFisher() {
     hideSpeechBubble();
-    if (fisher && fisher.mesh) {
-      worldRoot.remove(fisher.mesh);
-      disposeObject(fisher.mesh);
+    if (fisher) {
+      // Remove soft-block cell so old grass stays walkable after despawn
+      if (fisher.soft && rows[fisher.row]) {
+        const grow = rows[fisher.row];
+        if (!grow.blocks) grow.blocks = [];
+        const ix = grow.blocks.indexOf(fisher.col);
+        if (ix >= 0) grow.blocks.splice(ix, 1);
+      }
+      if (fisher.mesh) {
+        worldRoot.remove(fisher.mesh);
+        disposeObject(fisher.mesh);
+      }
     }
     fisher = null;
+    fisherSoftCol = null;
   }
 
-  function placeFisher() {
+  function pickFisherMidCol(row) {
+    // Prefer mid playable columns (near PLAYER_COL_START), avoid tree / soft-block cells
+    const midPrefs = [PLAYER_COL_START, PLAYER_COL_START - 1, PLAYER_COL_START + 1, PLAYER_COL_START - 2, PLAYER_COL_START + 2];
+    const candidates = [];
+    for (let c = 0; c < COLS; c++) {
+      if (row.trees && row.trees.includes(c)) continue;
+      if (row.blocks && row.blocks.includes(c)) continue;
+      candidates.push(c);
+    }
+    if (!candidates.length) return null;
+    for (const pref of midPrefs) {
+      if (candidates.includes(pref)) return pref;
+    }
+    // Fallback: closest to center
+    candidates.sort((a, b) => Math.abs(a - PLAYER_COL_START) - Math.abs(b - PLAYER_COL_START));
+    return candidates[0];
+  }
+
+  function spawnFisherAt(rowIdx, col) {
     clearFisher();
-    // Prefer an early grass row past the safe start so player meets them on the path
-    let target = null;
-    for (let i = SAFE_START_ROWS; i < Math.min(rows.length, SAFE_START_ROWS + 8); i++) {
-      const row = rows[i];
-      if (!row || row.type !== "grass") continue;
-      const candidates = [];
-      for (let c = 0; c < COLS; c++) {
-        if (row.trees && row.trees.includes(c)) continue;
-        if (c === PLAYER_COL_START && i <= SAFE_START_ROWS + 1) continue;
-        candidates.push(c);
-      }
-      if (!candidates.length) continue;
-      // Prefer side columns for "riverside" vibe
-      candidates.sort((a, b) => {
-        const sideScore = (c) => Math.min(c, COLS - 1 - c);
-        return sideScore(a) - sideScore(b);
-      });
-      const col = candidates[0];
-      target = { row: i, col };
-      break;
-    }
-    if (!target) return;
-    // Soft-block: treat as tree so player can't stand on them
-    const grow = rows[target.row];
-    if (grow && grow.type === "grass") {
-      if (!grow.trees.includes(target.col)) grow.trees.push(target.col);
-    }
+    const grow = rows[rowIdx];
+    if (!grow || grow.type !== "grass") return false;
+    if (col == null) col = pickFisherMidCol(grow);
+    if (col == null) return false;
+    if (!grow.blocks) grow.blocks = [];
+    if (!grow.blocks.includes(col)) grow.blocks.push(col);
     const mesh = makeFisherMesh();
-    mesh.position.set(colToX(target.col), 0, rowToZ(target.row));
-    // Face slightly toward path center / camera forward
-    mesh.rotation.y = target.col < PLAYER_COL_START ? -0.4 : 0.4;
+    mesh.position.set(colToX(col), 0, rowToZ(rowIdx));
+    mesh.rotation.y = col < PLAYER_COL_START ? -0.25 : col > PLAYER_COL_START ? 0.25 : 0;
     worldRoot.add(mesh);
     fisher = {
-      row: target.row,
-      col: target.col,
+      row: rowIdx,
+      col,
       mesh,
+      soft: true,
       lineIdx: 0,
       lineTimer: 0,
       bob: 0,
       shownOnce: false,
+      passed: false,
     };
+    fisherSoftCol = col;
+    return true;
+  }
+
+  function placeFisher() {
+    // First appearance: early grass, nearer mid lateral space
+    clearFisher();
+    fisherNextScore = null;
+    let target = null;
+    for (let i = SAFE_START_ROWS; i < Math.min(rows.length, SAFE_START_ROWS + 10); i++) {
+      const row = rows[i];
+      if (!row || row.type !== "grass") continue;
+      const col = pickFisherMidCol(row);
+      if (col == null) continue;
+      // Avoid blocking the very first hop cell on start column
+      if (col === PLAYER_COL_START && i <= SAFE_START_ROWS + 1) {
+        const alt = pickFisherMidCol({
+          trees: row.trees || [],
+          blocks: (row.blocks || []).concat([PLAYER_COL_START]),
+          type: "grass",
+        });
+        if (alt == null) continue;
+        target = { row: i, col: alt };
+      } else {
+        target = { row: i, col };
+      }
+      break;
+    }
+    if (!target) return;
+    spawnFisherAt(target.row, target.col);
+  }
+
+  function scheduleNextFisher() {
+    const base = score || (player ? Math.max(0, player.maxRow - 1) : 0);
+    fisherNextScore = base + (40 + Math.floor(Math.random() * 21)); // 40..60
+  }
+
+  function trySpawnScheduledFisher() {
+    if (fisher || fisherNextScore == null) return;
+    if (score < fisherNextScore) return;
+    // Place on a grass row ahead of the player, near mid
+    const minRow = Math.max(SAFE_START_ROWS, (player ? player.row : 0) + 3);
+    const maxRow = Math.min(rows.length - 1, minRow + 14);
+    let placed = false;
+    for (let i = minRow; i <= maxRow; i++) {
+      const row = rows[i];
+      if (!row || row.type !== "grass") continue;
+      // Skip if an ad already soft-blocks the preferred mid cell heavily
+      if (spawnFisherAt(i, null)) {
+        placed = true;
+        fisherNextScore = null;
+        break;
+      }
+    }
+    if (!placed) {
+      // Push threshold a bit so we retry after more rows generate
+      fisherNextScore = score + 3;
+    }
   }
 
   function updateFisher(dt) {
+    // Respawn scheduling when no active fisher
     if (!fisher || !fisher.mesh) {
       hideSpeechBubble();
+      if (playing && !gameOver) trySpawnScheduledFisher();
       return;
     }
     fisher.bob += dt;
@@ -1432,14 +1502,22 @@
       idle.position.y = Math.sin(fisher.bob * 2.2) * 0.03;
       idle.rotation.z = Math.sin(fisher.bob * 1.4) * 0.04;
     }
-    // Keep mesh Z synced if rows ever shifted (they don't) — still update pos
     fisher.mesh.position.set(colToX(fisher.col), 0, rowToZ(fisher.row));
 
     if (!playing || gameOver || !player) {
       hideSpeechBubble();
       return;
     }
+
     const prow = playerVisualRow();
+    // After player hops past the fisher, despawn and schedule next (40–60 crosses)
+    if (!fisher.passed && prow > fisher.row + 1) {
+      fisher.passed = true;
+      scheduleNextFisher();
+      clearFisher();
+      return;
+    }
+
     const near = Math.abs(prow - fisher.row) <= FISHER_NEAR_ROWS;
     if (!near) {
       hideSpeechBubble();
@@ -1462,7 +1540,6 @@
     if (speechBubbleText && !speechBubbleText.textContent) {
       speechBubbleText.textContent = FISHER_LINES[fisher.lineIdx];
     }
-    // Project world → overlay coords inside #app
     _fisherProj.set(colToX(fisher.col), 1.55, rowToZ(fisher.row));
     _fisherProj.project(camera);
     if (_fisherProj.z > 1) {
@@ -1479,6 +1556,274 @@
       speechBubble.classList.remove("hidden");
       speechBubble.setAttribute("aria-hidden", "false");
     }
+  }
+
+  // ─── Tomo Shop roadside ad signs (v1.14) ───────────────────
+  function makeAdSignMesh() {
+    const root = new THREE.Group();
+    const postMat = mat("#6d4c41", { flat: true });
+    const frameMat = mat("#f4a261", { flat: true });
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.35, 0.12), postMat);
+    post.position.y = 0.68;
+    post.castShadow = true;
+    root.add(post);
+    // Cross-arm
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 0.08), postMat);
+    arm.position.set(0, 1.32, 0);
+    root.add(arm);
+    // Billboard board (double-sided)
+    const faceMats = [];
+    function makeFaceMat() {
+      const m = new THREE.MeshLambertMaterial({
+        color: new THREE.Color("#ff9f1c"),
+        map: tomoShopTex || null,
+        emissive: new THREE.Color("#ffb703"),
+        emissiveIntensity: 0.22,
+        flatShading: true,
+        side: THREE.FrontSide,
+      });
+      faceMats.push(m);
+      return m;
+    }
+    const boardW = 1.05;
+    const boardH = 1.05;
+    const boardD = 0.08;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(boardW + 0.1, boardH + 0.1, boardD), frameMat);
+    frame.position.set(0, 1.85, 0);
+    root.add(frame);
+    const front = new THREE.Mesh(new THREE.BoxGeometry(boardW, boardH, 0.02), makeFaceMat());
+    front.position.set(0, 1.85, boardD * 0.5 + 0.01);
+    root.add(front);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(boardW, boardH, 0.02), makeFaceMat());
+    back.position.set(0, 1.85, -(boardD * 0.5 + 0.01));
+    back.rotation.y = Math.PI;
+    root.add(back);
+    // Little rooftop cap for Crossy vibe
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(boardW + 0.18, 0.08, 0.2), mat("#e76f51", { flat: true }));
+    cap.position.set(0, 1.85 + boardH * 0.5 + 0.06, 0);
+    root.add(cap);
+    root.userData.adFaceMats = faceMats;
+    return root;
+  }
+
+  function clearAdSigns() {
+    for (const ad of adSigns) {
+      if (ad.soft && rows[ad.row]) {
+        const grow = rows[ad.row];
+        if (!grow.blocks) grow.blocks = [];
+        const ix = grow.blocks.indexOf(ad.col);
+        if (ix >= 0) grow.blocks.splice(ix, 1);
+      }
+      if (ad.mesh) {
+        worldRoot.remove(ad.mesh);
+        disposeObject(ad.mesh);
+      }
+    }
+    adSigns = [];
+    adsEverPlaced = 0;
+  }
+
+  function pickAdSideCol(row) {
+    // Soft-block edge columns so the path center stays clear
+    const sides = [0, COLS - 1, 1, COLS - 2];
+    for (const c of sides) {
+      if (row.trees && row.trees.includes(c)) continue;
+      if (row.blocks && row.blocks.includes(c)) continue;
+      if (fisher && fisher.row === row.index && fisher.col === c) continue;
+      return c;
+    }
+    return null;
+  }
+
+  function placeAdOnRow(rowIdx) {
+    const row = rows[rowIdx];
+    if (!row || row.type !== "grass") return false;
+    if (adSigns.some((a) => a.row === rowIdx)) return false;
+    const col = pickAdSideCol(row);
+    if (col == null) return false;
+    if (!row.blocks) row.blocks = [];
+    if (!row.blocks.includes(col)) row.blocks.push(col);
+    const mesh = makeAdSignMesh();
+    mesh.position.set(colToX(col), 0, rowToZ(rowIdx));
+    // Angle slightly toward path center so the logo faces the hop lane
+    mesh.rotation.y = col < PLAYER_COL_START ? 0.35 : -0.35;
+    worldRoot.add(mesh);
+    adSigns.push({ row: rowIdx, col, mesh, soft: true });
+    adsEverPlaced += 1;
+    return true;
+  }
+
+  function resetAdSchedule() {
+    clearAdSigns();
+    nextAdScore = 35 + Math.floor(Math.random() * 11); // 35..45 once per run
+  }
+
+  function trySpawnAds() {
+    if (!playing || gameOver) return;
+    if (nextAdScore >= 99999) return;
+    if (score < nextAdScore) return;
+    // Find a grass row near the threshold / ahead of player
+    const target = Math.max(nextAdScore + 1, (player ? player.row : 0) + 2);
+    const lo = Math.max(SAFE_START_ROWS, target - 2);
+    const hi = Math.min(rows.length - 1, target + 10);
+    let placed = false;
+    for (let i = lo; i <= hi; i++) {
+      if (placeAdOnRow(i)) {
+        placed = true;
+        break;
+      }
+    }
+    // Schedule next ad further ahead (every ~25–40 score)
+    nextAdScore = score + (25 + Math.floor(Math.random() * 16));
+    if (!placed) {
+      // Retry soon if no grass was available
+      nextAdScore = Math.min(nextAdScore, score + 5);
+    }
+  }
+
+  function updateAdSigns() {
+    const minKeep = player ? Math.max(0, player.row - 8) : 0;
+    for (let i = adSigns.length - 1; i >= 0; i--) {
+      const ad = adSigns[i];
+      if (!ad.mesh) {
+        adSigns.splice(i, 1);
+        continue;
+      }
+      // Despawn ads far behind the player to avoid mesh leaks on long runs
+      if (player && ad.row < minKeep) {
+        if (ad.soft && rows[ad.row] && rows[ad.row].blocks) {
+          const ix = rows[ad.row].blocks.indexOf(ad.col);
+          if (ix >= 0) rows[ad.row].blocks.splice(ix, 1);
+        }
+        worldRoot.remove(ad.mesh);
+        disposeObject(ad.mesh);
+        adSigns.splice(i, 1);
+        continue;
+      }
+      ad.mesh.position.set(colToX(ad.col), 0, rowToZ(ad.row));
+    }
+  }
+
+  // ─── Street light-posts (v1.14) ────────────────────────────
+  function makeLightPostMesh() {
+    const g = new THREE.Group();
+    const poleMat = mat("#4a4e69", { flat: true });
+    const baseMat = mat("#2b2d42", { flat: true });
+    const headMat = mat("#3d405b", { flat: true });
+    const glassMat = new THREE.MeshLambertMaterial({
+      color: new THREE.Color("#2a2a32"),
+      emissive: new THREE.Color("#000000"),
+      emissiveIntensity: 0,
+      flatShading: true,
+    });
+    const bulbMat = new THREE.MeshLambertMaterial({
+      color: new THREE.Color("#3a3a40"),
+      emissive: new THREE.Color("#ffd166"),
+      emissiveIntensity: 0,
+      flatShading: true,
+    });
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.08, 0.22), baseMat);
+    base.position.y = 0.04;
+    g.add(base);
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.55, 0.1), poleMat);
+    pole.position.y = 0.85;
+    pole.castShadow = true;
+    g.add(pole);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.08, 0.08), poleMat);
+    arm.position.set(0.18, 1.58, 0);
+    g.add(arm);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.1, 0.22), headMat);
+    head.position.set(0.36, 1.52, 0);
+    g.add(head);
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.08, 0.16), glassMat);
+    glass.position.set(0.36, 1.44, 0);
+    g.add(glass);
+    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.1), bulbMat);
+    bulb.position.set(0.36, 1.44, 0);
+    g.add(bulb);
+    g.userData.bulbMat = bulbMat;
+    g.userData.glassMat = glassMat;
+    return g;
+  }
+
+  function ensureLampPointLights() {
+    if (lampPointLights.length) return;
+    for (let i = 0; i < LAMP_POINT_POOL; i++) {
+      const pl = new THREE.PointLight(0xffd28a, 0, 6.5, 2);
+      pl.visible = false;
+      scene.add(pl);
+      lampPointLights.push(pl);
+    }
+  }
+
+  function clearStreetLamps() {
+    streetLamps.length = 0;
+    for (const pl of lampPointLights) {
+      pl.intensity = 0;
+      pl.visible = false;
+    }
+  }
+
+  function registerStreetLamp(mesh, rowIndex, sideX) {
+    streetLamps.push({
+      mesh,
+      bulb: mesh.userData.bulbMat,
+      glass: mesh.userData.glassMat,
+      row: rowIndex,
+      sideX,
+    });
+  }
+
+  function applyStreetLampGlow(glow) {
+    lastLampGlow = glow;
+    const g = Math.max(0, Math.min(1, glow || 0));
+    for (const lamp of streetLamps) {
+      if (lamp.bulb) {
+        lamp.bulb.emissiveIntensity = g * 1.35;
+        lamp.bulb.color.set(g > 0.05 ? "#fff3c4" : "#3a3a40");
+        lamp.bulb.emissive.set(g > 0.05 ? "#ffd166" : "#000000");
+      }
+      if (lamp.glass) {
+        lamp.glass.emissiveIntensity = g * 0.55;
+        lamp.glass.color.set(g > 0.15 ? "#ffe8a3" : "#2a2a32");
+        lamp.glass.emissive.set(g > 0.15 ? "#ffcc66" : "#000000");
+      }
+    }
+    // Real PointLights: only the nearest few to the player (perf)
+    ensureLampPointLights();
+    if (!player || g < 0.05) {
+      for (const pl of lampPointLights) {
+        pl.intensity = 0;
+        pl.visible = false;
+      }
+      return;
+    }
+    const pz = rowToZ(playerVisualRow());
+    const ranked = streetLamps
+      .map((lamp) => ({
+        lamp,
+        d: Math.abs(rowToZ(lamp.row) - pz),
+      }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, lampPointLights.length);
+    for (let i = 0; i < lampPointLights.length; i++) {
+      const pl = lampPointLights[i];
+      const hit = ranked[i];
+      if (!hit) {
+        pl.intensity = 0;
+        pl.visible = false;
+        continue;
+      }
+      const lamp = hit.lamp;
+      pl.visible = true;
+      pl.intensity = 0.15 + g * 0.85;
+      pl.distance = 5.5 + g * 2;
+      pl.position.set(lamp.sideX, 1.5, rowToZ(lamp.row));
+    }
+  }
+
+  function updateStreetLampLights() {
+    if (lastLampGlow > 0.05) applyStreetLampGlow(lastLampGlow);
   }
 
   function shadeHex(hex, amt) {
@@ -1667,6 +2012,8 @@
     });
     rowMeshes.clear();
     clearFisher();
+    clearAdSigns();
+    clearStreetLamps();
     if (playerMesh) {
       worldRoot.remove(playerMesh);
       disposeObject(playerMesh);
@@ -1712,6 +2059,7 @@
           mesh.position.x = colToX(car.x + car.w / 2 - 0.5);
           mesh.position.y = 0;
           mesh.position.z = 0;
+          // +X travel → yaw 0; −X → PI (mesh built +X-forward)
           mesh.rotation.y = row.dir > 0 ? 0 : Math.PI;
           mesh.visible = true;
         }
@@ -1725,6 +2073,9 @@
       worldRoot.remove(entry.group);
       disposeObject(entry.group);
       rowMeshes.delete(row.index);
+      for (let i = streetLamps.length - 1; i >= 0; i--) {
+        if (streetLamps[i].row === row.index) streetLamps.splice(i, 1);
+      }
     }
     const group = new THREE.Group();
     group.position.set(0, 0, rowToZ(row.index));
@@ -1753,6 +2104,21 @@
         carMeshes.push(m);
       }
     }
+
+    // Street light-posts on shoulders every few rows (not every row)
+    if (row.index >= SAFE_START_ROWS && row.index % 3 === 0) {
+      const shoulder = (COLS * CELL) / 2 + 0.55;
+      [-1, 1].forEach((side) => {
+        const post = makeLightPostMesh();
+        const sideX = side * shoulder;
+        post.position.set(sideX, 0, 0);
+        // Mirror arm toward the road
+        post.scale.x = side < 0 ? -1 : 1;
+        group.add(post);
+        registerStreetLamp(post, row.index, sideX);
+      });
+    }
+
     worldRoot.add(group);
     rowMeshes.set(row.index, {
       group,
@@ -1772,6 +2138,14 @@
       worldRoot.remove(entry.group);
       disposeObject(entry.group);
       rowMeshes.delete(idx);
+    }
+    if (toRemove.length) {
+      // Drop lamp registry entries for pruned rows
+      for (let i = streetLamps.length - 1; i >= 0; i--) {
+        if (streetLamps[i].row < keepMin || streetLamps[i].row > keepMax) {
+          streetLamps.splice(i, 1);
+        }
+      }
     }
   }
 
@@ -2540,6 +2914,20 @@
       tone(110, 0.45, "triangle", sfxGain, 0.15, 40);
     }
 
+    /** Brief BGM duck (non-fatal hit). Does not stop music. */
+    function duckMusic(sec) {
+      if (!audioStarted || muted || !musicPlaying || musicPaused) return;
+      const c = ensureCtx();
+      if (!c || !musicGain) return;
+      const dur = Math.max(0.2, Math.min(2.5, sec == null ? 0.45 : sec));
+      const now = c.currentTime;
+      const base = BGM_VOLUME * musicVol;
+      musicGain.gain.cancelScheduledValues(now);
+      musicGain.gain.setValueAtTime(base, now);
+      musicGain.gain.linearRampToValueAtTime(base * 0.18, now + 0.05);
+      musicGain.gain.linearRampToValueAtTime(base, now + dur);
+    }
+
     function uiClick() {
       if (muted) return;
       resume();
@@ -2748,6 +3136,7 @@
       unlock,
       hop,
       crash,
+      duckMusic,
       uiClick,
       scoreTick,
       combo,
@@ -2778,14 +3167,29 @@
     };
   })();
 
-  // ─── Character select (2D menu previews) ──────────────────
+  // ─── Character select carousel (v1.16) ────────────────────
   function syncCharSelectUi() {
-    charCards.forEach((card) => {
-      const id = card.getAttribute("data-char");
+    const ch = CHARACTERS[selectedChar] || CHARACTERS.capkid;
+    if (charSelectEl) charSelectEl.setAttribute("data-char", ch.id);
+    if (charNameLabel) charNameLabel.textContent = ch.label || ch.id;
+    if (charPreviewCanvas) charPreviewCanvas.setAttribute("data-preview", ch.id);
+    charDots.forEach((dot) => {
+      const id = dot.getAttribute("data-char");
       const on = id === selectedChar;
-      card.classList.toggle("selected", on);
-      card.setAttribute("aria-pressed", on ? "true" : "false");
+      dot.classList.toggle("selected", on);
+      dot.setAttribute("aria-pressed", on ? "true" : "false");
     });
+  }
+
+  function charIndexOf(id) {
+    const i = CHAR_ORDER.indexOf(id);
+    return i >= 0 ? i : 0;
+  }
+
+  function cycleCharacter(delta) {
+    const i = charIndexOf(selectedChar);
+    const next = CHAR_ORDER[(i + delta + CHAR_ORDER.length) % CHAR_ORDER.length];
+    setCharacter(next);
   }
 
   function setCharacter(id) {
@@ -2803,8 +3207,11 @@
 
   function drawCharPreviews(tSec) {
     const t = tSec == null ? idleTime : tSec;
-    document.querySelectorAll("canvas.char-preview").forEach((c) => {
-      const id = c.getAttribute("data-preview");
+    const canvases = [];
+    if (charPreviewCanvas) canvases.push(charPreviewCanvas);
+    else document.querySelectorAll("canvas.char-preview").forEach((c) => canvases.push(c));
+    canvases.forEach((c) => {
+      const id = c.getAttribute("data-preview") || selectedChar;
       const ch = CHARACTERS[id];
       if (!ch) return;
       const pctx = c.getContext("2d");
@@ -2973,7 +3380,7 @@
         trees.push(c);
       }
     }
-    return { type: "grass", index, trees, shade: index % 2 };
+    return { type: "grass", index, trees, blocks: [], shade: index % 2 };
   }
 
   function makeRoadRow(index) {
@@ -3040,6 +3447,7 @@
       }
       rows.push(row);
     }
+    trySpawnAds();
   }
 
   // ─── Player / game flow ───────────────────────────────────
@@ -3051,6 +3459,14 @@
     cameraZ = 0;
     cameraX = colToX(PLAYER_COL_START);
     shake = 0;
+    hearts = MAX_HEARTS;
+    invulnTimer = 0;
+    hitFlashTimer = 0;
+    if (hitFlashEl) {
+      hitFlashEl.classList.remove("show");
+      hitFlashEl.classList.add("hidden");
+    }
+    syncHeartsHud();
     resetPlayerFade();
     hopQueue = [];
     gameOver = false;
@@ -3091,8 +3507,10 @@
     }
 
     ensurePlayerMesh();
+    ensureLampPointLights();
     syncVisibleWorld();
     placeFisher();
+    resetAdSchedule();
     updatePlayerVisual();
     updateCamera(1);
     snapSkyPhase(0);
@@ -3121,8 +3539,9 @@
 
     ensureRowsAhead();
     const target = rows[nr];
-    if (target && target.type === "grass" && target.trees.includes(nc)) {
-      return;
+    if (target && target.type === "grass") {
+      if (target.trees && target.trees.includes(nc)) return;
+      if (target.blocks && target.blocks.includes(nc)) return;
     }
 
     player.fromCol = player.col;
@@ -3145,6 +3564,8 @@
       scoreEl.textContent = String(score);
       AudioFX.scoreTick(score);
       checkComboMilestones();
+      trySpawnAds();
+      trySpawnScheduledFisher();
     }
     ensureRowsAhead();
     if (hopQueue.length) {
@@ -3168,6 +3589,7 @@
   }
 
   function checkHit() {
+    if (invulnTimer > 0) return false;
     const pb = playerWorldBox();
     const checkRows = new Set([
       player.row,
@@ -3195,6 +3617,53 @@
 
   function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  function syncHeartsHud() {
+    if (!heartsEl) return;
+    const nodes = heartsEl.querySelectorAll(".heart");
+    nodes.forEach((el, i) => {
+      const filled = i < hearts;
+      el.classList.toggle("filled", filled);
+      el.classList.toggle("empty", !filled);
+      el.textContent = filled ? "❤" : "♡";
+    });
+  }
+
+  function flashHitOverlay() {
+    if (!hitFlashEl) return;
+    hitFlashEl.classList.remove("hidden");
+    hitFlashEl.classList.add("show");
+    hitFlashTimer = 0.22;
+  }
+
+  function updateHitFlash(dt) {
+    if (hitFlashTimer <= 0) return;
+    hitFlashTimer -= dt;
+    if (hitFlashTimer <= 0) {
+      hitFlashTimer = 0;
+      if (hitFlashEl) {
+        hitFlashEl.classList.remove("show");
+        hitFlashEl.classList.add("hidden");
+      }
+    }
+  }
+
+  /** Vehicle hit: lose 1 heart + invuln; at 0 hearts run full game-over. */
+  function onPlayerHit() {
+    if (gameOver || invulnTimer > 0) return;
+    hearts = Math.max(0, hearts - 1);
+    syncHeartsHud();
+    shake = Math.max(shake, 14);
+    flashHitOverlay();
+    if (hearts <= 0) {
+      // Full cut: triggerGameOver stops BGM + plays crash once
+      triggerGameOver();
+      return;
+    }
+    AudioFX.crash();
+    if (typeof AudioFX.duckMusic === "function") AudioFX.duckMusic(0.5);
+    invulnTimer = HIT_INVULN_SEC;
   }
 
 
@@ -3703,6 +4172,7 @@
 
     if (!playing) {
       if (shake > 0) shake = Math.max(0, shake - dt * 22);
+      updateHitFlash(dt);
       updatePlayerDeathFade(dt);
       updateSkyCycle(dt);
       return;
@@ -3758,7 +4228,9 @@
       }
     }
 
-    if (checkHit()) triggerGameOver();
+    if (invulnTimer > 0) invulnTimer = Math.max(0, invulnTimer - dt);
+    updateHitFlash(dt);
+    if (checkHit()) onPlayerHit();
     if (shake > 0) shake = Math.max(0, shake - dt * 30);
   }
 
@@ -3780,6 +4252,8 @@
     applyIdlePose(dt || 0.016);
     updateCamera(dt || 0.016);
     updateFisher(dt || 0.016);
+    updateAdSigns();
+    updateStreetLampLights();
     renderer.render(scene, camera);
   }
 
@@ -3820,8 +4294,10 @@
     playing = false;
     idleTime = 0;
     ensurePlayerMesh();
+    ensureLampPointLights();
     syncVisibleWorld();
     placeFisher();
+    resetAdSchedule();
     updatePlayerVisual();
     updateCamera(1);
     lastTs = performance.now();
@@ -3916,30 +4392,33 @@
     tryHop(m[0], m[1]);
   });
 
-  // ─── Input: touch ─────────────────────────────────────────
-  let touchStart = null;
+  // ─── Input: pointer / touch on #app play surface (v1.15+) ──
+  // Attach to #app (not only canvas) so Android hits that land on HUD /
+  // overlay siblings still bubble here. Pointer Events preferred; touch fallback.
+  const appEl = document.getElementById("app");
+  let gestureStart = null;
+  let gestureHandled = false; // suppress synthetic click after pointer/touch hop
   const SWIPE_THRESH = 28;
+  const UI_GESTURE_IGNORE =
+    "button, input, textarea, select, a, label, .hud-icon-btn, .panel, .char-select, .char-carousel, .char-stage, .char-nav, .char-dot, .track-btn, .keymap-row";
 
-  canvas.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) return;
-    const t = e.touches[0];
-    touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
-  }, { passive: true });
+  function overlayIsVisible() {
+    return !!(overlay && overlay.classList.contains("visible"));
+  }
 
-  canvas.addEventListener("touchend", (e) => {
-    if (!touchStart) return;
-    if (!playing || paused) {
-      touchStart = null;
-      if (!paused && overlay.dataset.mode === "gameover") beginPlay();
-      return;
-    }
-    const t = e.changedTouches[0];
-    const dx = t.clientX - touchStart.x;
-    const dy = t.clientY - touchStart.y;
+  function isInteractiveTarget(target) {
+    if (!target || typeof target.closest !== "function") return false;
+    return !!target.closest(UI_GESTURE_IGNORE);
+  }
+
+  function markGestureHandled() {
+    gestureHandled = true;
+    setTimeout(() => { gestureHandled = false; }, 450);
+  }
+
+  function applySwipeOrTap(dx, dy) {
     const adx = Math.abs(dx);
     const ady = Math.abs(dy);
-    touchStart = null;
-
     if (adx < SWIPE_THRESH && ady < SWIPE_THRESH) {
       tryHop(0, 1);
       return;
@@ -3950,15 +4429,126 @@
     } else {
       tryHop(0, dy < 0 ? 1 : -1);
     }
-  }, { passive: true });
+  }
 
-  canvas.addEventListener("click", (e) => {
+  function onPlayGestureStart(clientX, clientY, target, ev) {
+    if (isInteractiveTarget(target)) {
+      gestureStart = null;
+      return;
+    }
+
+    // Menu / options / pause: do not steal; let buttons work.
+    // Game over: track tap on non-UI (e.g. backdrop) for play-again.
+    if (overlayIsVisible()) {
+      if (!paused && overlay.dataset.mode === "gameover") {
+        gestureStart = { x: clientX, y: clientY, t: performance.now(), mode: "gameover" };
+      } else {
+        gestureStart = null;
+      }
+      return;
+    }
+
+    if (!playing || paused || gameOver) {
+      gestureStart = null;
+      return;
+    }
+
+    gestureStart = { x: clientX, y: clientY, t: performance.now(), mode: "play" };
+    if (ev && ev.cancelable) {
+      try { ev.preventDefault(); } catch (_) { /* ignore */ }
+    }
+  }
+
+  function onPlayGestureEnd(clientX, clientY, ev) {
+    if (!gestureStart) return;
+    const start = gestureStart;
+    gestureStart = null;
+    const dx = clientX - start.x;
+    const dy = clientY - start.y;
+
+    if (start.mode === "gameover") {
+      if (Math.abs(dx) < SWIPE_THRESH && Math.abs(dy) < SWIPE_THRESH) {
+        if (!paused && overlayIsVisible() && overlay.dataset.mode === "gameover") {
+          beginPlay();
+          markGestureHandled();
+          if (ev && ev.cancelable) {
+            try { ev.preventDefault(); } catch (_) { /* ignore */ }
+          }
+        }
+      }
+      return;
+    }
+
+    // Active play: hop only while overlay is hidden
+    if (!playing || paused || gameOver || overlayIsVisible()) return;
+
+    applySwipeOrTap(dx, dy);
+    markGestureHandled();
+    if (ev && ev.cancelable) {
+      try { ev.preventDefault(); } catch (_) { /* ignore */ }
+    }
+  }
+
+  function onPlayGestureCancel() {
+    gestureStart = null;
+  }
+
+  const supportsPointer = typeof window.PointerEvent !== "undefined";
+
+  if (supportsPointer) {
+    appEl.addEventListener("pointerdown", (e) => {
+      if (e.isPrimary === false) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      onPlayGestureStart(e.clientX, e.clientY, e.target, e);
+    }, { passive: false });
+
+    appEl.addEventListener("pointerup", (e) => {
+      if (e.isPrimary === false) return;
+      onPlayGestureEnd(e.clientX, e.clientY, e);
+    }, { passive: false });
+
+    appEl.addEventListener("pointercancel", () => {
+      onPlayGestureCancel();
+    }, { passive: true });
+  } else {
+    // Older Android WebViews without Pointer Events
+    appEl.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      onPlayGestureStart(t.clientX, t.clientY, e.target, e);
+    }, { passive: false });
+
+    appEl.addEventListener("touchend", (e) => {
+      const t = e.changedTouches[0];
+      if (!t) return;
+      onPlayGestureEnd(t.clientX, t.clientY, e);
+    }, { passive: false });
+
+    appEl.addEventListener("touchcancel", () => {
+      onPlayGestureCancel();
+    }, { passive: true });
+  }
+
+  // Desktop click / mouse fallback; ignore if pointer/touch already hopped
+  appEl.addEventListener("click", (e) => {
+    if (gestureHandled) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (isInteractiveTarget(e.target)) return;
+    if (overlayIsVisible()) return;
     if (!playing || gameOver || paused || !canControl || countdownActive) return;
     tryHop(0, 1);
   });
 
-  document.getElementById("app").addEventListener("touchmove", (e) => {
-    e.preventDefault();
+  // Block page scroll/zoom on the play surface during a run (not on overlays/UI)
+  appEl.addEventListener("touchmove", (e) => {
+    if (isInteractiveTarget(e.target)) return;
+    if (overlayIsVisible()) return;
+    if (playing && !paused) {
+      e.preventDefault();
+    }
   }, { passive: false });
 
   // ─── UI ───────────────────────────────────────────────────
@@ -3971,14 +4561,89 @@
     resetGame();
   }
 
-  charCards.forEach((card) => {
-    card.addEventListener("click", (e) => {
+  if (charPrevBtn) {
+    charPrevBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const id = card.getAttribute("data-char");
+      cycleCharacter(-1);
+      AudioFX.uiClick();
+    });
+  }
+  if (charNextBtn) {
+    charNextBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      cycleCharacter(1);
+      AudioFX.uiClick();
+    });
+  }
+  charDots.forEach((dot) => {
+    dot.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = dot.getAttribute("data-char");
       setCharacter(id);
       AudioFX.uiClick();
     });
   });
+
+  // Swipe left/right on carousel stage only (menu overlay); don't fight play gestures
+  (function bindCharCarouselSwipe() {
+    const target = charStageEl || charCarouselEl || charSelectEl;
+    if (!target) return;
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+    const THRESH = 36;
+
+    function onStart(x, y) {
+      if (!overlayIsVisible() || !overlay || overlay.dataset.mode !== "menu") return;
+      startX = x;
+      startY = y;
+      tracking = true;
+    }
+    function onEnd(x, y, ev) {
+      if (!tracking) return;
+      tracking = false;
+      const dx = x - startX;
+      const dy = y - startY;
+      if (Math.abs(dx) < THRESH || Math.abs(dx) < Math.abs(dy)) return;
+      cycleCharacter(dx < 0 ? 1 : -1);
+      AudioFX.uiClick();
+      if (ev && ev.cancelable) {
+        try { ev.preventDefault(); } catch (_) {}
+      }
+    }
+
+    target.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      onStart(e.clientX, e.clientY);
+    });
+    target.addEventListener("pointerup", (e) => {
+      onEnd(e.clientX, e.clientY, e);
+    });
+    target.addEventListener("pointercancel", () => { tracking = false; });
+    target.addEventListener("touchstart", (e) => {
+      if (!e.touches || !e.touches[0]) return;
+      onStart(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    target.addEventListener("touchend", (e) => {
+      const t = (e.changedTouches && e.changedTouches[0]) || null;
+      if (!t) return;
+      onEnd(t.clientX, t.clientY, e);
+    }, { passive: false });
+
+    if (charStageEl) {
+      charStageEl.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          cycleCharacter(-1);
+          AudioFX.uiClick();
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          cycleCharacter(1);
+          AudioFX.uiClick();
+        }
+      });
+    }
+  })();
 
   startBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -4181,6 +4846,7 @@
   syncBestFromBoard();
   updateBestHud();
   syncCharSelectUi();
+  syncHeartsHud();
   drawCharPreviews(0);
   showMenu();
 })();

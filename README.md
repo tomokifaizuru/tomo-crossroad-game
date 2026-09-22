@@ -1,6 +1,6 @@
 # Tomo Crossroad
 
-Version: **1.13**
+Version: **1.15**
 
 A Crossy Road–style hop-across-the-road game with **real Three.js 3D**. Mobile browsers (desktop too). Plain HTML + CSS + vanilla JavaScript + Three.js via CDN — **no build step**, no frameworks.
 
@@ -56,9 +56,9 @@ During a run, **Pause** (HUD ⏸ or **Esc**) freezes cars, hops, and score. A **
 
 Before each run you get a **main menu** with:
 
-- Title **Tomo Crossroad** · version **v1.13**
+- Title **Tomo Crossroad** · version **v1.16**
 - **Player name** field (max 12 chars, saved as `tomo-crossroad-player-name`; empty → **Player**)
-- **Cap Kid color** picker — 5 colorways with canvas previews (gentle idle bob / breathe)
+- **Cap Kid color** carousel — swipe or ◀ ▶ between 5 colorways (large preview + dots); persisted via `tomo-crossroad-character`
 - **Play**, **Leaderboard**, and **Options** buttons
 - Mute stays available in the HUD
 
@@ -119,7 +119,7 @@ Every **50** points (50, 100, 150, 200, …):
 
 ## Files
 
-- `index.html` — menu, name field, Leaderboard, Options, Pause, Cap Kid preview, game-over UI, HUD (score, run timer, countdown), Three.js CDN
+- `index.html` — menu, name field, Leaderboard, Options, Pause, Cap Kid preview, game-over UI, HUD (score, hearts, run timer, countdown), Three.js CDN
 - `style.css` — mobile-first portrait UI, menu / leaderboard / options / pause panels, medal ranks, combo flash
 - `game.js` — Three.js scene, lanes, traffic, hop/collision, Cap Kid mesh + idle, combo, remappable input, pause, online + local leaderboard, synthesized audio
 - `README.md` — this file
@@ -129,11 +129,31 @@ Every **50** points (50, 100, 150, 200, …):
 Real **PerspectiveCamera** behind/above the player, looking forward along the hop direction (Subway Surfers vibe, slightly higher overhead since v1.05):
 
 - Low-poly meshes for Cap Kid, cars, ground strips, and trees
-- **Day / Sunset / Night** sky cycle (~30s active play per phase) with blocky sun, **soft sphere clouds**, birds, brighter moon, stars, and night skyline
+- **Day / Sunset / Night** sky cycle (~30s active play per phase) with blocky sun, birds, brighter moon, stars, night skyline, and **street lights** that glow at night
 - Traffic still Crossy Road–style: each **road lane** is one vehicle type (car / truck / moto); vehicles travel left↔right and **enter only from road edges** (never spawn mid-lane)
 - Cap Kid gentle **idle** (bob / breathe / sway / blink) on menu and when not hopping
 
 ## Changelog
+
+### v1.16
+- **Vehicle facing fix** — car / truck / moto meshes are built facing **+X** only; lane direction is applied solely via `mesh.rotation.y` (`0` for +X, `Math.PI` for −X). Removes the double-mirror that made some lanes look like reversing
+- **HP: 3 hearts** — HUD heart containers near score; vehicle collision loses 1 heart (shake + red flash + crash SFX + brief BGM duck); **~1.1s invulnerability** so one car cannot drain all hearts; at 0 hearts → existing game-over / leaderboard flow
+- **Character select carousel** — one large Cap Kid preview at a time; swipe left/right on the stage (and ◀ ▶ / dots) cycles Blue / Red / Green / Purple / Yellow; Android-safe (carousel only while menu overlay is visible)
+- Menu / Options / Pause / Leaderboard / cache-bust **v1.16**
+
+### v1.15
+- **Android controls restored** — pointer + touch listeners on `#app` play surface (not only the canvas), so HUD/overlay siblings no longer swallow hops
+- Tap / swipe mapping unchanged (v1.04 inverted L/R); ignore gestures that start on buttons/inputs/panels; no steal while menu/options/pause overlay is visible
+- CSS: remove global `touch-action: none`; set it only on `#app` / `#game`; UI controls use `touch-action: manipulation`
+- Suppress synthetic click after pointer/touch hop (no double-hop); keyboard unchanged; `canControl` after 3-2-1-START unchanged
+- Menu / Options / Pause / Leaderboard / cache-bust **v1.15**
+
+### v1.14
+- **Tomo Shop roadside ads** — after a random score threshold in **35–45**, a 3D billboard (post + double-sided board) shows `assets/tomo-shop.png`; further signs every ~25–40 crosses on grass edges (soft-block)
+- **Straw-hat fisher** moves nearer the **middle** of the lane width; **reappears** every **40–60** crosses on a future grass row (mesh cleaned on despawn/respawn); speech bubbles unchanged
+- **Clouds removed** from the sky cycle (sun / moon / birds / stars / skyline remain)
+- **Street light-posts** along grass/road shoulders every few rows — off by day, warm at sunset, lit at night (emissive bulbs + pooled PointLights near the player)
+- Menu / Options / Pause / Leaderboard / cache-bust **v1.14**
 
 ### v1.13
 - **Brighter night** — deep blue-violet sky/fog, stronger hemi/ambient/moon fill + cool rim so Cap Kid and roads stay readable; larger/brighter moon; stars + skyline windows still glowy

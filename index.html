@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#2a1a2e" />
   <title>Tomo Crossroad</title>
-  <link rel="stylesheet" href="style.css?v=v113" />
+  <link rel="stylesheet" href="style.css?v=v116" />
   <!-- Three.js r128 UMD — works with file:// and GitHub Pages (no build step) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
@@ -17,7 +17,14 @@
 
     <div id="hud">
       <div id="hudLeft">
-        <div id="score">0</div>
+        <div id="scoreRow">
+          <div id="score">0</div>
+          <div id="hearts" class="hearts" aria-label="Hearts" title="Hearts">
+            <span class="heart filled" data-i="0" aria-hidden="true">❤</span>
+            <span class="heart filled" data-i="1" aria-hidden="true">❤</span>
+            <span class="heart filled" data-i="2" aria-hidden="true">❤</span>
+          </div>
+        </div>
         <div id="runTimer" class="hidden" aria-live="off">0:00.000</div>
         <div id="comboHud" class="hidden" aria-live="polite">COMBO x0</div>
       </div>
@@ -42,36 +49,31 @@
       <span id="comboFlashText">COMBO x1</span>
     </div>
 
+    <div id="hitFlash" class="hidden" aria-hidden="true"></div>
+
     <!-- Overlay: main menu / options / pause / game over -->
     <div id="overlay" class="visible" data-mode="menu">
       <div class="panel" id="menuPanel">
         <h1>Tomo Crossroad</h1>
-        <p class="version">v1.13</p>
+        <p class="version">v1.16</p>
         <p class="tagline">Hop across. Don't get hit.</p>
 
-        <div class="char-select" role="group" aria-label="Character color">
+        <div class="char-select" role="group" aria-label="Character color" id="charSelect">
           <p class="char-label">Cap Kid color</p>
-          <div class="char-row">
-            <button type="button" class="char-card selected" data-char="capkid" aria-pressed="true">
-              <canvas class="char-preview" width="72" height="72" data-preview="capkid"></canvas>
-              <span class="char-name">Blue</span>
-            </button>
-            <button type="button" class="char-card" data-char="red" aria-pressed="false">
-              <canvas class="char-preview" width="72" height="72" data-preview="red"></canvas>
-              <span class="char-name">Red</span>
-            </button>
-            <button type="button" class="char-card" data-char="green" aria-pressed="false">
-              <canvas class="char-preview" width="72" height="72" data-preview="green"></canvas>
-              <span class="char-name">Green</span>
-            </button>
-            <button type="button" class="char-card" data-char="purple" aria-pressed="false">
-              <canvas class="char-preview" width="72" height="72" data-preview="purple"></canvas>
-              <span class="char-name">Purple</span>
-            </button>
-            <button type="button" class="char-card" data-char="yellow" aria-pressed="false">
-              <canvas class="char-preview" width="72" height="72" data-preview="yellow"></canvas>
-              <span class="char-name">Yellow</span>
-            </button>
+          <div class="char-carousel" id="charCarousel">
+            <button type="button" class="char-nav char-prev" id="charPrevBtn" aria-label="Previous character">◀</button>
+            <div class="char-stage" id="charStage" tabindex="0" aria-roledescription="carousel" aria-label="Swipe to change Cap Kid color">
+              <canvas class="char-preview char-preview-lg" width="144" height="144" id="charPreviewCanvas" data-preview="capkid"></canvas>
+              <span class="char-name" id="charNameLabel">Blue</span>
+            </div>
+            <button type="button" class="char-nav char-next" id="charNextBtn" aria-label="Next character">▶</button>
+          </div>
+          <div class="char-dots" id="charDots" role="tablist" aria-label="Character colors">
+            <button type="button" class="char-dot selected" data-char="capkid" aria-label="Blue" aria-pressed="true"></button>
+            <button type="button" class="char-dot" data-char="red" aria-label="Red" aria-pressed="false"></button>
+            <button type="button" class="char-dot" data-char="green" aria-label="Green" aria-pressed="false"></button>
+            <button type="button" class="char-dot" data-char="purple" aria-label="Purple" aria-pressed="false"></button>
+            <button type="button" class="char-dot" data-char="yellow" aria-label="Yellow" aria-pressed="false"></button>
           </div>
         </div>
 
@@ -93,7 +95,7 @@
 
       <div class="panel hidden" id="optionsPanel">
         <h1>Options</h1>
-        <p class="version">v1.13</p>
+        <p class="version">v1.16</p>
 
         <div class="opt-section">
           <p class="opt-label">Music track</p>
@@ -173,7 +175,7 @@
 
       <div class="panel hidden" id="leaderboardPanel">
         <h1>Leaderboard</h1>
-        <p class="version">v1.13</p>
+        <p class="version">v1.16</p>
         <p class="tagline lb-subtitle">Global · Best scores from all players (online).</p>
         <p id="leaderboardStatus" class="lb-status" aria-live="polite"></p>
         <ol id="leaderboardList" class="lb-list" aria-live="polite"></ol>
@@ -185,7 +187,7 @@
 
       <div class="panel hidden" id="pausePanel">
         <h1>Paused</h1>
-        <p class="version">v1.13</p>
+        <p class="version">v1.16</p>
         <p class="tagline">Take a breath.</p>
         <div class="btn-row">
           <button id="resumeBtn" type="button">Resume</button>
@@ -208,6 +210,6 @@
       </div>
     </div>
   </div>
-  <script src="game.js?v=v113"></script>
+  <script src="game.js?v=v116"></script>
 </body>
 </html>
