@@ -1,6 +1,6 @@
 # Tomo Crossroad
 
-Version: **1.11**
+Version: **1.13**
 
 A Crossy Road–style hop-across-the-road game with **real Three.js 3D**. Mobile browsers (desktop too). Plain HTML + CSS + vanilla JavaScript + Three.js via CDN — **no build step**, no frameworks.
 
@@ -36,7 +36,7 @@ You can also open `index.html` directly via `file://`. Three.js is loaded from a
 | Arrow keys or WASD | Move (remappable in Options) |
 | **Esc** (during play) | Pause / resume |
 | Space / Enter (on menu or game over) | Start / play again |
-| **Play** / **Play Again** | Start a run |
+| **Play** / **Play Again** | Start a run (3-2-1-START countdown) |
 | **Options** | Music + SFX volume + key mapping |
 | **Back to Menu** | Return to menu after game over |
 | ⏸ HUD button | Pause (during gameplay) |
@@ -56,9 +56,9 @@ During a run, **Pause** (HUD ⏸ or **Esc**) freezes cars, hops, and score. A **
 
 Before each run you get a **main menu** with:
 
-- Title **Tomo Crossroad** · version **v1.11**
+- Title **Tomo Crossroad** · version **v1.13**
 - **Player name** field (max 12 chars, saved as `tomo-crossroad-player-name`; empty → **Player**)
-- **Cap Kid** preview (gentle idle bob / breathe)
+- **Cap Kid color** picker — 5 colorways with canvas previews (gentle idle bob / breathe)
 - **Play**, **Leaderboard**, and **Options** buttons
 - Mute stays available in the HUD
 
@@ -72,11 +72,15 @@ Before each run you get a **main menu** with:
 - Defaults after the v1.04 L/R invert: Left = ArrowLeft / A → **+col** (screen-left); Right = ArrowRight / D → **−col** (screen-right)
 - Touch swipes use the same screen L/R invert (swipe left → screen-left)
 
-| Character | Vibe | Look |
-|-----------|------|------|
-| **Cap Kid** | Cute mini chibi | Big head, small body, signature **blue cap** |
+| Id | Label | Look |
+|----|-------|------|
+| `capkid` | **Blue** | Default blue cap / cyan shirt |
+| `red` | **Red** | Coral / red colorway |
+| `green` | **Green** | Mint / green colorway |
+| `purple` | **Purple** | Violet colorway |
+| `yellow` | **Yellow** | Gold / yellow colorway |
 
-(Selection is saved as `tomo-crossroad-character` in localStorage.)
+Same Cap Kid chibi mesh; only palette changes. Selection is saved as `tomo-crossroad-character` in localStorage.
 
 After game over you see your score (and combo if any), your **best + rank** for that name, a **New best! Rank #N** flash when you improve, then **Play Again**, **Leaderboard**, or **Back to Menu**.
 
@@ -115,7 +119,7 @@ Every **50** points (50, 100, 150, 200, …):
 
 ## Files
 
-- `index.html` — menu, name field, Leaderboard, Options, Pause, Cap Kid preview, game-over UI, HUD, Three.js CDN
+- `index.html` — menu, name field, Leaderboard, Options, Pause, Cap Kid preview, game-over UI, HUD (score, run timer, countdown), Three.js CDN
 - `style.css` — mobile-first portrait UI, menu / leaderboard / options / pause panels, medal ranks, combo flash
 - `game.js` — Three.js scene, lanes, traffic, hop/collision, Cap Kid mesh + idle, combo, remappable input, pause, online + local leaderboard, synthesized audio
 - `README.md` — this file
@@ -125,11 +129,28 @@ Every **50** points (50, 100, 150, 200, …):
 Real **PerspectiveCamera** behind/above the player, looking forward along the hop direction (Subway Surfers vibe, slightly higher overhead since v1.05):
 
 - Low-poly meshes for Cap Kid, cars, ground strips, and trees
-- Warm **sunset** sky, fog, and lighting (orange / pink / purple mood)
-- Traffic still Crossy Road–style: cars travel left↔right and **enter only from road edges** (never spawn mid-lane)
+- **Day / Sunset / Night** sky cycle (~30s active play per phase) with blocky sun, **soft sphere clouds**, birds, brighter moon, stars, and night skyline
+- Traffic still Crossy Road–style: each **road lane** is one vehicle type (car / truck / moto); vehicles travel left↔right and **enter only from road edges** (never spawn mid-lane)
 - Cap Kid gentle **idle** (bob / breathe / sway / blink) on menu and when not hopping
 
 ## Changelog
+
+### v1.13
+- **Brighter night** — deep blue-violet sky/fog, stronger hemi/ambient/moon fill + cool rim so Cap Kid and roads stay readable; larger/brighter moon; stars + skyline windows still glowy
+- **Softer clouds** — overlapping semi-transparent spheres (billowy) instead of stacked cubes; faint soft wisps at night; day/sunset stay fluffy
+- **5 Cap Kid colors** at start: Blue (`capkid`), Red, Green, Purple, Yellow — same mesh, distinct palettes; persisted via `tomo-crossroad-character`
+- **Per-lane vehicle kind** — each road row picks car / truck / moto once for its life (mix across the world, not mixed within a lane)
+- **Run timer** shows milliseconds: `m:ss.mmm` (e.g. `0:00.000`); still pauses / freezes / hides as before
+- Menu / Options / Pause / Leaderboard / cache-bust **v1.13**
+
+### v1.12
+- **Sky day → sunset → night cycle** (~30s active play per phase; pause freezes the sky clock; countdown does not advance phases). Smooth ~2.5s lerp of background, fog, and lights
+- Blocky sky props: sun, half-transparent clouds, bird flocks (day/sunset); glowy moon, twinkling stars, city skyline silhouette (night)
+- **Start countdown** 3 → 2 → 1 → START! (~0.8s each); hops and traffic frozen until START; sky starts on Day when the run begins
+- **Run progress timer** HUD `#runTimer` (`m:ss` active play time; pauses with pause; freezes on game over; resets each run)
+- **Vehicle variety** on roads: cars (most common), longer **trucks** (slower), **motorcycles** (narrower/faster); hitboxes match mesh size; edge-only spawns unchanged
+- **Straw-hat fisher NPC** on a safe grass row (soft-block cell) with cycling speech bubble when nearby — including *"HEY! NICE DAY FOR FISHING, AINT IT?"*
+- Menu / Options / Pause / Leaderboard / cache-bust **v1.12**
 
 ### v1.11
 - **Online shared leaderboard** — HighScore API sync (HTTPS); POST on improved personal best; fetch on Leaderboard open

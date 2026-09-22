@@ -65,6 +65,26 @@ html, body {
   text-shadow: 0 2px 0 rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
 }
 
+#runTimer {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(10, 14, 30, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 2px 10px;
+  border-radius: 999px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  min-width: 7.2em;
+  text-align: center;
+}
+
+#runTimer.hidden {
+  display: none;
+}
+
 #comboHud {
   font-size: 13px;
   font-weight: 800;
@@ -145,6 +165,80 @@ html, body {
 }
 
 /* Combo celebration flash */
+#countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 22;
+}
+
+#countdown.hidden {
+  display: none;
+}
+
+#countdownText {
+  font-size: clamp(64px, 22vw, 120px);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-shadow:
+    0 0 28px rgba(255, 230, 109, 0.75),
+    0 6px 0 #ef476f,
+    0 12px 36px rgba(0,0,0,0.5);
+  animation: countdownPop 0.75s ease-out;
+}
+
+#countdownText.is-start {
+  font-size: clamp(48px, 16vw, 88px);
+  color: #ffe66d;
+  letter-spacing: 0.08em;
+}
+
+@keyframes countdownPop {
+  0%   { transform: scale(0.35); opacity: 0; }
+  20%  { transform: scale(1.15); opacity: 1; }
+  55%  { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.05); opacity: 0.92; }
+}
+
+#speechBubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -100%);
+  max-width: min(220px, 70vw);
+  padding: 8px 12px;
+  background: #fff8e7;
+  color: #2b2d42;
+  border: 3px solid #2b2d42;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  text-align: center;
+  pointer-events: none;
+  z-index: 18;
+  box-shadow: 0 4px 0 rgba(0,0,0,0.2);
+}
+
+#speechBubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-top-color: #2b2d42;
+}
+
+#speechBubble.hidden {
+  display: none;
+}
+
 #comboFlash {
   position: absolute;
   inset: 0;
@@ -267,24 +361,26 @@ html, body {
 
 .char-row {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: center;
 }
 
 .char-card {
   appearance: none;
-  flex: 1;
-  max-width: 180px;
+  flex: 0 1 auto;
+  width: 64px;
+  max-width: 72px;
   border: 2px solid rgba(255,255,255,0.2);
   background: rgba(0,0,0,0.25);
-  border-radius: 16px;
-  padding: 10px 8px 12px;
+  border-radius: 14px;
+  padding: 6px 4px 8px;
   cursor: pointer;
   color: #fff;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease;
   touch-action: manipulation;
 }
@@ -305,24 +401,47 @@ html, body {
   box-shadow: 0 0 0 2px rgba(58, 134, 255, 0.4), 0 6px 16px rgba(0,0,0,0.3);
 }
 
+.char-card[data-char="red"].selected {
+  border-color: #ef476f;
+  background: rgba(239, 71, 111, 0.18);
+  box-shadow: 0 0 0 2px rgba(239, 71, 111, 0.4), 0 6px 16px rgba(0,0,0,0.3);
+}
+
+.char-card[data-char="green"].selected {
+  border-color: #06d6a0;
+  background: rgba(6, 214, 160, 0.18);
+  box-shadow: 0 0 0 2px rgba(6, 214, 160, 0.4), 0 6px 16px rgba(0,0,0,0.3);
+}
+
+.char-card[data-char="purple"].selected {
+  border-color: #9b5de5;
+  background: rgba(155, 93, 229, 0.18);
+  box-shadow: 0 0 0 2px rgba(155, 93, 229, 0.4), 0 6px 16px rgba(0,0,0,0.3);
+}
+
+.char-card[data-char="yellow"].selected {
+  border-color: #ffd166;
+  background: rgba(255, 209, 102, 0.18);
+  box-shadow: 0 0 0 2px rgba(255, 209, 102, 0.4), 0 6px 16px rgba(0,0,0,0.3);
+}
+
 .char-preview {
-  width: 72px;
-  height: 72px;
+  width: 48px;
+  height: 48px;
   display: block;
   border-radius: 50%;
   background: rgba(255,255,255,0.06);
 }
 
 .char-name {
-  font-size: 15px;
+  font-size: 11px;
   font-weight: 800;
   margin-top: 2px;
+  letter-spacing: 0.02em;
 }
 
 .char-vibe {
-  font-size: 11px;
-  opacity: 0.65;
-  line-height: 1.2;
+  display: none;
 }
 
 #startBtn,

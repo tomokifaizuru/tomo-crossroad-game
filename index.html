@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#2a1a2e" />
   <title>Tomo Crossroad</title>
-  <link rel="stylesheet" href="style.css?v=v111" />
+  <link rel="stylesheet" href="style.css?v=v113" />
   <!-- Three.js r128 UMD — works with file:// and GitHub Pages (no build step) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
@@ -18,6 +18,7 @@
     <div id="hud">
       <div id="hudLeft">
         <div id="score">0</div>
+        <div id="runTimer" class="hidden" aria-live="off">0:00.000</div>
         <div id="comboHud" class="hidden" aria-live="polite">COMBO x0</div>
       </div>
       <div id="hudRight">
@@ -29,6 +30,14 @@
       </div>
     </div>
 
+    <div id="countdown" class="hidden" aria-hidden="true">
+      <span id="countdownText">3</span>
+    </div>
+
+    <div id="speechBubble" class="hidden" aria-hidden="true">
+      <span id="speechBubbleText"></span>
+    </div>
+
     <div id="comboFlash" class="hidden" aria-hidden="true">
       <span id="comboFlashText">COMBO x1</span>
     </div>
@@ -37,16 +46,31 @@
     <div id="overlay" class="visible" data-mode="menu">
       <div class="panel" id="menuPanel">
         <h1>Tomo Crossroad</h1>
-        <p class="version">v1.11</p>
+        <p class="version">v1.13</p>
         <p class="tagline">Hop across. Don't get hit.</p>
 
-        <div class="char-select" role="group" aria-label="Character">
-          <p class="char-label">Your hopper</p>
+        <div class="char-select" role="group" aria-label="Character color">
+          <p class="char-label">Cap Kid color</p>
           <div class="char-row">
             <button type="button" class="char-card selected" data-char="capkid" aria-pressed="true">
-              <canvas class="char-preview" width="96" height="96" data-preview="capkid"></canvas>
-              <span class="char-name">Cap Kid</span>
-              <span class="char-vibe">Mini chibi · blue cap</span>
+              <canvas class="char-preview" width="72" height="72" data-preview="capkid"></canvas>
+              <span class="char-name">Blue</span>
+            </button>
+            <button type="button" class="char-card" data-char="red" aria-pressed="false">
+              <canvas class="char-preview" width="72" height="72" data-preview="red"></canvas>
+              <span class="char-name">Red</span>
+            </button>
+            <button type="button" class="char-card" data-char="green" aria-pressed="false">
+              <canvas class="char-preview" width="72" height="72" data-preview="green"></canvas>
+              <span class="char-name">Green</span>
+            </button>
+            <button type="button" class="char-card" data-char="purple" aria-pressed="false">
+              <canvas class="char-preview" width="72" height="72" data-preview="purple"></canvas>
+              <span class="char-name">Purple</span>
+            </button>
+            <button type="button" class="char-card" data-char="yellow" aria-pressed="false">
+              <canvas class="char-preview" width="72" height="72" data-preview="yellow"></canvas>
+              <span class="char-name">Yellow</span>
             </button>
           </div>
         </div>
@@ -69,7 +93,7 @@
 
       <div class="panel hidden" id="optionsPanel">
         <h1>Options</h1>
-        <p class="version">v1.11</p>
+        <p class="version">v1.13</p>
 
         <div class="opt-section">
           <p class="opt-label">Music track</p>
@@ -149,7 +173,7 @@
 
       <div class="panel hidden" id="leaderboardPanel">
         <h1>Leaderboard</h1>
-        <p class="version">v1.11</p>
+        <p class="version">v1.13</p>
         <p class="tagline lb-subtitle">Global · Best scores from all players (online).</p>
         <p id="leaderboardStatus" class="lb-status" aria-live="polite"></p>
         <ol id="leaderboardList" class="lb-list" aria-live="polite"></ol>
@@ -161,7 +185,7 @@
 
       <div class="panel hidden" id="pausePanel">
         <h1>Paused</h1>
-        <p class="version">v1.11</p>
+        <p class="version">v1.13</p>
         <p class="tagline">Take a breath.</p>
         <div class="btn-row">
           <button id="resumeBtn" type="button">Resume</button>
@@ -184,6 +208,6 @@
       </div>
     </div>
   </div>
-  <script src="game.js?v=v111"></script>
+  <script src="game.js?v=v113"></script>
 </body>
 </html>

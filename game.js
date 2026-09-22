@@ -48,7 +48,7 @@
   const CHARACTERS = {
     capkid: {
       id: "capkid",
-      label: "Cap Kid",
+      label: "Blue",
       body: "#ffb4a2",
       accent: "#3a86ff",
       belly: "#ffe5d9",
@@ -61,6 +61,70 @@
       shoes: "#2b2d42",
       cap: "#3a86ff",
       capBill: "#2657c9",
+    },
+    red: {
+      id: "red",
+      label: "Red",
+      body: "#ffb4a2",
+      accent: "#ef476f",
+      belly: "#ffe0e6",
+      hair: "#5c4033",
+      eye: "#ffffff",
+      pupil: "#2b2d42",
+      detail: "#c9184a",
+      shirt: "#ff6b6b",
+      pants: "#c1121f",
+      shoes: "#2b2d42",
+      cap: "#ef476f",
+      capBill: "#b5172a",
+    },
+    green: {
+      id: "green",
+      label: "Green",
+      body: "#ffb4a2",
+      accent: "#06d6a0",
+      belly: "#e0fff4",
+      hair: "#5c4033",
+      eye: "#ffffff",
+      pupil: "#2b2d42",
+      detail: "#0aad7a",
+      shirt: "#80ed99",
+      pants: "#2d6a4f",
+      shoes: "#2b2d42",
+      cap: "#06d6a0",
+      capBill: "#04966f",
+    },
+    purple: {
+      id: "purple",
+      label: "Purple",
+      body: "#ffb4a2",
+      accent: "#9b5de5",
+      belly: "#f3e8ff",
+      hair: "#5c4033",
+      eye: "#ffffff",
+      pupil: "#2b2d42",
+      detail: "#7b2cbf",
+      shirt: "#c77dff",
+      pants: "#5a189a",
+      shoes: "#2b2d42",
+      cap: "#9b5de5",
+      capBill: "#7b2cbf",
+    },
+    yellow: {
+      id: "yellow",
+      label: "Yellow",
+      body: "#ffb4a2",
+      accent: "#ffd166",
+      belly: "#fff6d9",
+      hair: "#5c4033",
+      eye: "#ffffff",
+      pupil: "#2b2d42",
+      detail: "#e09f3e",
+      shirt: "#ffe66d",
+      pants: "#bc6c25",
+      shoes: "#2b2d42",
+      cap: "#ffd166",
+      capBill: "#e09f3e",
     },
   };
 
@@ -138,6 +202,11 @@
   const comboHud = document.getElementById("comboHud");
   const comboFlash = document.getElementById("comboFlash");
   const comboFlashText = document.getElementById("comboFlashText");
+  const countdownEl = document.getElementById("countdown");
+  const countdownText = document.getElementById("countdownText");
+  const runTimerEl = document.getElementById("runTimer");
+  const speechBubble = document.getElementById("speechBubble");
+  const speechBubbleText = document.getElementById("speechBubbleText");
   const charCards = Array.from(document.querySelectorAll(".char-card"));
   const volumeSlider = document.getElementById("volumeSlider");
   const volumeValue = document.getElementById("volumeValue");
@@ -183,6 +252,34 @@
   let keyBinds = Object.assign({}, DEFAULT_KEY_BINDS);
   let keyMap = {};
   let previewIdleRaf = 0;
+  let countdownActive = false;
+  let canControl = false;
+  let runTimeSec = 0;
+  let runTimerFrozen = false;
+  let skyPhaseIndex = 0; // 0 day, 1 sunset, 2 night
+  let skyPhaseAge = 0;
+  let skyBlend = 1; // 1 = fully in current phase
+  let skyBlendFrom = 0;
+  let skyBlendTo = 0;
+  let skyClockRunning = false;
+  let countdownQueue = null;
+  let countdownStepTimer = 0;
+  let fisher = null; // { row, col, mesh, lineTimer, lineIdx, bob }
+  const FISHER_LINES = [
+    "HEY! NICE DAY FOR FISHING, AINT IT?",
+    "Howdy!",
+    "Nice hops!",
+    "Watch the road!",
+    "Catch anything yet?",
+    "Stay safe out there!",
+  ];
+  const FISHER_NEAR_ROWS = 4;
+  const FISHER_LINE_SEC = 3.6;
+  const _fisherProj = new THREE.Vector3();
+
+  const SKY_PHASE_SEC = 30;
+  const SKY_LERP_SEC = 2.5;
+  const COUNTDOWN_STEP_SEC = 0.8;
 
   try {
     best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
@@ -335,10 +432,554 @@
   sun.shadow.camera.top = 18;
   sun.shadow.camera.bottom = -18;
   scene.add(sun);
-  scene.add(new THREE.AmbientLight(0xffc9a8, 0.32));
+  const ambient = new THREE.AmbientLight(0xffc9a8, 0.32);
+  scene.add(ambient);
   const rim = new THREE.DirectionalLight(0xb56bff, 0.28);
   rim.position.set(-6, 6, -4);
   scene.add(rim);
+
+  // ─── Sky cycle palettes & soft sky props (v1.13) ───────────
+  const SKY_PALETTES = [
+    {
+      id: "day",
+      sky: "#87CEEB",
+      fog: "#b8d4e8",
+      hemiSky: "#fff1c8",
+      hemiGround: "#6a9e70",
+      hemiInt: 0.88,
+      sunColor: "#fff0b0",
+      sunInt: 1.2,
+      ambientColor: "#e8f4ff",
+      ambientInt: 0.48,
+      rimColor: "#9ec9ff",
+      rimInt: 0.22,
+      cloudTint: "#ffffff",
+      cloudOp: 0.45,
+      sunMeshY: 14,
+      sunMeshScale: 1,
+      sunVisible: 1,
+      moonVisible: 0,
+      birdsVisible: 1,
+      starsVisible: 0,
+      skylineVisible: 0,
+    },
+    {
+      id: "sunset",
+      sky: "#ff8c5a",
+      fog: "#c97b9a",
+      hemiSky: "#ffb088",
+      hemiGround: "#5a3d6e",
+      hemiInt: 0.72,
+      sunColor: "#ff9a5c",
+      sunInt: 1.05,
+      ambientColor: "#ffc9a8",
+      ambientInt: 0.32,
+      rimColor: "#b56bff",
+      rimInt: 0.3,
+      cloudTint: "#ffd0b8",
+      cloudOp: 0.5,
+      sunMeshY: 3.2,
+      sunMeshScale: 1.35,
+      sunVisible: 1,
+      moonVisible: 0,
+      birdsVisible: 1,
+      starsVisible: 0.15,
+      skylineVisible: 0.25,
+    },
+    {
+      id: "night",
+      sky: "#1e3260",
+      fog: "#2a3f70",
+      hemiSky: "#6a82c0",
+      hemiGround: "#243048",
+      hemiInt: 0.62,
+      sunColor: "#c8d4ff",
+      sunInt: 0.48,
+      ambientColor: "#4a5e90",
+      ambientInt: 0.4,
+      rimColor: "#8b7cff",
+      rimInt: 0.38,
+      cloudTint: "#d8e0f5",
+      cloudOp: 0.1,
+      sunMeshY: -2,
+      sunMeshScale: 0.6,
+      sunVisible: 0,
+      moonVisible: 1,
+      birdsVisible: 0,
+      starsVisible: 1,
+      skylineVisible: 1,
+    },
+  ];
+
+  const _tmpColA = new THREE.Color();
+  const _tmpColB = new THREE.Color();
+  const _tmpColC = new THREE.Color();
+
+  function lerpHex(a, b, t, out) {
+    _tmpColA.set(a);
+    _tmpColB.set(b);
+    out.copy(_tmpColA).lerp(_tmpColB, t);
+    return out;
+  }
+
+  function lerpNum(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function sampleSkyPalette(fromIdx, toIdx, t) {
+    const A = SKY_PALETTES[fromIdx];
+    const B = SKY_PALETTES[toIdx];
+    const out = {};
+    const colorKeys = [
+      "sky", "fog", "hemiSky", "hemiGround", "sunColor",
+      "ambientColor", "rimColor", "cloudTint",
+    ];
+    for (const k of colorKeys) {
+      out[k] = "#" + lerpHex(A[k], B[k], t, _tmpColC).getHexString();
+    }
+    const numKeys = [
+      "hemiInt", "sunInt", "ambientInt", "rimInt", "cloudOp",
+      "sunMeshY", "sunMeshScale", "sunVisible", "moonVisible",
+      "birdsVisible", "starsVisible", "skylineVisible",
+    ];
+    for (const k of numKeys) out[k] = lerpNum(A[k], B[k], t);
+    return out;
+  }
+
+  const skyRoot = new THREE.Group();
+  scene.add(skyRoot);
+  let sunMeshGroup = null;
+  let moonMeshGroup = null;
+  let cloudsGroup = null;
+  let birdsGroup = null;
+  let starsGroup = null;
+  let skylineGroup = null;
+  const cloudDrift = [];
+  const birdFlocks = [];
+  const starTwinkle = [];
+
+  function blockMat(hex, opts) {
+    const o = opts || {};
+    if (o.emissive) {
+      return new THREE.MeshLambertMaterial({
+        color: new THREE.Color(hex),
+        emissive: new THREE.Color(o.emissive),
+        emissiveIntensity: o.emissiveIntensity != null ? o.emissiveIntensity : 0.6,
+        flatShading: true,
+        transparent: !!o.transparent,
+        opacity: o.opacity != null ? o.opacity : 1,
+        depthWrite: !o.transparent,
+      });
+    }
+    if (o.basic) {
+      return new THREE.MeshBasicMaterial({
+        color: new THREE.Color(hex),
+        transparent: !!o.transparent,
+        opacity: o.opacity != null ? o.opacity : 1,
+        depthWrite: !o.transparent,
+      });
+    }
+    return new THREE.MeshLambertMaterial({
+      color: new THREE.Color(hex),
+      flatShading: true,
+      transparent: !!o.transparent,
+      opacity: o.opacity != null ? o.opacity : 1,
+      depthWrite: !o.transparent,
+    });
+  }
+
+  function addBox(parent, w, h, d, x, y, z, material) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    mesh.position.set(x, y, z);
+    parent.add(mesh);
+    return mesh;
+  }
+
+  function buildSunMesh() {
+    const g = new THREE.Group();
+    const core = blockMat("#ffd166", { emissive: "#ff9a3c", emissiveIntensity: 0.85 });
+    const glow = blockMat("#ffb347", { emissive: "#ff7a1a", emissiveIntensity: 0.55, transparent: true, opacity: 0.55 });
+    addBox(g, 1.6, 1.6, 1.6, 0, 0, 0, core);
+    addBox(g, 1.1, 1.1, 1.1, 1.2, 0.2, 0, core);
+    addBox(g, 1.0, 1.0, 1.0, -1.1, -0.15, 0.1, core);
+    addBox(g, 0.9, 0.9, 0.9, 0.15, 1.15, -0.1, core);
+    addBox(g, 0.85, 0.85, 0.85, -0.2, -1.1, 0.05, core);
+    addBox(g, 2.8, 2.8, 0.6, 0, 0, -0.4, glow);
+    return g;
+  }
+
+  function buildMoonMesh() {
+    const g = new THREE.Group();
+    const pale = blockMat("#f2f6ff", { emissive: "#d0dcff", emissiveIntensity: 1.15, basic: false });
+    const glow = blockMat("#c4d0ff", { emissive: "#9aabff", emissiveIntensity: 0.95, transparent: true, opacity: 0.62 });
+    addBox(g, 1.75, 1.75, 1.75, 0, 0, 0, pale);
+    addBox(g, 1.1, 1.1, 1.1, 1.15, 0.3, 0, pale);
+    addBox(g, 1.05, 1.05, 1.05, -1.1, -0.2, 0.1, pale);
+    addBox(g, 0.85, 0.85, 0.85, 0.12, 1.2, -0.05, pale);
+    addBox(g, 3.1, 3.1, 0.55, 0, 0, -0.4, glow);
+    return g;
+  }
+
+  function buildCloud(seed) {
+    const g = new THREE.Group();
+    const op = 0.38 + (seed % 5) * 0.04;
+    // Soft billowy spheres (shared material so palette tint/opacity stay in sync)
+    const m = new THREE.MeshLambertMaterial({
+      color: new THREE.Color("#ffffff"),
+      transparent: true,
+      opacity: op,
+      depthWrite: false,
+      flatShading: false,
+    });
+    // [radius, x, y, z]
+    const pieces = [
+      [0.95, 0, 0, 0],
+      [0.72, 0.85, 0.08, 0.12],
+      [0.68, -0.9, -0.02, -0.08],
+      [0.58, 0.2, 0.42, 0.06],
+      [0.52, -0.35, 0.38, -0.1],
+      [0.48, 0.55, -0.12, -0.2],
+      [0.44, -0.55, -0.15, 0.18],
+    ];
+    for (const p of pieces) {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(p[0], 12, 10), m);
+      mesh.position.set(p[1], p[2], p[3]);
+      g.add(mesh);
+    }
+    g.userData.baseMats = [m];
+    return g;
+  }
+
+  function buildBird() {
+    const g = new THREE.Group();
+    const body = blockMat("#2b2d42");
+    const wing = blockMat("#1b1d2e");
+    addBox(g, 0.22, 0.14, 0.35, 0, 0, 0, body);
+    const left = addBox(g, 0.45, 0.08, 0.12, 0.28, 0.02, 0, wing);
+    const right = addBox(g, 0.45, 0.08, 0.12, -0.28, 0.02, 0, wing);
+    g.userData.leftWing = left;
+    g.userData.rightWing = right;
+    return g;
+  }
+
+  function buildSkyline() {
+    const g = new THREE.Group();
+    const bldg = blockMat("#0c0e18");
+    const win = blockMat("#ffd166", { emissive: "#ffaa33", emissiveIntensity: 1.2 });
+    let x = -18;
+    while (x < 18) {
+      const w = 1.2 + Math.random() * 2.2;
+      const h = 2.5 + Math.random() * 7;
+      const d = 1.0 + Math.random() * 1.4;
+      addBox(g, w, h, d, x + w * 0.5, h * 0.5, 0, bldg);
+      const floors = Math.max(1, Math.floor(h / 1.1));
+      for (let f = 0; f < floors; f++) {
+        if (Math.random() < 0.45) {
+          const wx = x + 0.25 + Math.random() * Math.max(0.2, w - 0.5);
+          const wy = 0.4 + f * 1.05 + Math.random() * 0.2;
+          addBox(g, 0.18, 0.22, 0.12, wx, wy, d * 0.52, win);
+        }
+      }
+      x += w + 0.35 + Math.random() * 0.8;
+    }
+    return g;
+  }
+
+  function initSkyProps() {
+    sunMeshGroup = buildSunMesh();
+    sunMeshGroup.position.set(10, 14, 20);
+    skyRoot.add(sunMeshGroup);
+
+    moonMeshGroup = buildMoonMesh();
+    moonMeshGroup.position.set(-8, 13, 18);
+    moonMeshGroup.visible = false;
+    skyRoot.add(moonMeshGroup);
+
+    cloudsGroup = new THREE.Group();
+    skyRoot.add(cloudsGroup);
+    for (let i = 0; i < 7; i++) {
+      const c = buildCloud(i * 17 + 3);
+      const x = -14 + i * 4.5 + (i % 2) * 1.2;
+      const y = 8 + (i % 3) * 1.6;
+      const z = 12 + (i % 4) * 3.5;
+      c.position.set(x, y, z);
+      c.scale.setScalar(0.85 + (i % 3) * 0.2);
+      cloudsGroup.add(c);
+      cloudDrift.push({ mesh: c, speed: 0.35 + (i % 4) * 0.12, baseX: x, span: 28 });
+    }
+
+    birdsGroup = new THREE.Group();
+    skyRoot.add(birdsGroup);
+    for (let f = 0; f < 3; f++) {
+      const flock = new THREE.Group();
+      const birds = [];
+      for (let b = 0; b < 4; b++) {
+        const bird = buildBird();
+        bird.position.set((b - 1.5) * 0.7, Math.sin(b) * 0.35, (b % 2) * 0.4);
+        flock.add(bird);
+        birds.push(bird);
+      }
+      flock.position.set(-16 + f * 10, 9 + f * 1.2, 14 + f * 4);
+      birdsGroup.add(flock);
+      birdFlocks.push({
+        group: flock,
+        birds,
+        speed: 2.2 + f * 0.4,
+        baseY: flock.position.y,
+        phase: f * 1.7,
+      });
+    }
+
+    starsGroup = new THREE.Group();
+    skyRoot.add(starsGroup);
+    for (let i = 0; i < 48; i++) {
+      const s = new THREE.Mesh(
+        new THREE.BoxGeometry(0.18, 0.18, 0.18),
+        blockMat("#eef2ff", { emissive: "#ffffff", emissiveIntensity: 1.0, basic: false })
+      );
+      const ang = (i / 48) * Math.PI * 2;
+      const rad = 8 + (i % 7) * 2.2;
+      s.position.set(
+        Math.cos(ang) * rad + ((i * 13) % 5) - 2,
+        6 + (i % 11) * 1.1,
+        10 + Math.sin(ang * 1.3) * 8 + (i % 5)
+      );
+      starsGroup.add(s);
+      starTwinkle.push({ mesh: s, phase: i * 0.37, speed: 1.5 + (i % 5) * 0.35 });
+    }
+    starsGroup.visible = false;
+
+    skylineGroup = buildSkyline();
+    skylineGroup.position.set(0, 0, 34);
+    skylineGroup.visible = false;
+    skyRoot.add(skylineGroup);
+  }
+
+  initSkyProps();
+
+  function applySkySample(p) {
+    const skyCol = new THREE.Color(p.sky);
+    const fogCol = new THREE.Color(p.fog);
+    scene.background.copy(skyCol);
+    scene.fog.color.copy(fogCol);
+    renderer.setClearColor(skyCol, 1);
+    hemi.color.set(p.hemiSky);
+    hemi.groundColor.set(p.hemiGround);
+    hemi.intensity = p.hemiInt;
+    sun.color.set(p.sunColor);
+    sun.intensity = p.sunInt;
+    ambient.color.set(p.ambientColor);
+    ambient.intensity = p.ambientInt;
+    rim.color.set(p.rimColor);
+    rim.intensity = p.rimInt;
+
+    if (sunMeshGroup) {
+      sunMeshGroup.visible = p.sunVisible > 0.05;
+      sunMeshGroup.position.set(10, p.sunMeshY, 20);
+      sunMeshGroup.scale.setScalar(p.sunMeshScale);
+      sunMeshGroup.traverse((ch) => {
+        if (ch.material && ch.material.opacity != null && ch.material.transparent) {
+          ch.material.opacity = Math.min(0.65, 0.35 + p.sunVisible * 0.3);
+        }
+      });
+    }
+    if (moonMeshGroup) {
+      moonMeshGroup.visible = p.moonVisible > 0.05;
+      const mo = Math.max(0, Math.min(1, p.moonVisible));
+      moonMeshGroup.traverse((ch) => {
+        if (ch.material) {
+          if (ch.material.transparent) ch.material.opacity = 0.35 + mo * 0.45;
+          if (ch.material.emissiveIntensity != null) {
+            ch.material.emissiveIntensity = 0.7 + mo * 0.7;
+          }
+        }
+      });
+    }
+    if (birdsGroup) birdsGroup.visible = p.birdsVisible > 0.05;
+    if (cloudsGroup) {
+      cloudsGroup.visible = p.cloudOp > 0.05;
+      cloudsGroup.traverse((ch) => {
+        if (ch.isMesh && ch.material && ch.material.transparent) {
+          ch.material.opacity = p.cloudOp;
+          ch.material.color.set(p.cloudTint);
+        }
+      });
+    }
+    if (starsGroup) {
+      starsGroup.visible = p.starsVisible > 0.05;
+      starsGroup.traverse((ch) => {
+        if (ch.isMesh && ch.material) {
+          if (ch.material.opacity != null) ch.material.opacity = Math.max(0.15, p.starsVisible);
+        }
+      });
+    }
+    if (skylineGroup) {
+      skylineGroup.visible = p.skylineVisible > 0.05;
+      skylineGroup.traverse((ch) => {
+        if (!ch.isMesh || !ch.material) return;
+        if (ch.material.emissiveIntensity != null && ch.material.emissive) {
+          // window cubes — keep glow; scale overall via parent opacity isn't available, leave
+        } else if (ch.material.color) {
+          // building body stays dark
+        }
+      });
+    }
+  }
+
+  function snapSkyPhase(idx) {
+    skyPhaseIndex = ((idx % 3) + 3) % 3;
+    skyBlendFrom = skyPhaseIndex;
+    skyBlendTo = skyPhaseIndex;
+    skyBlend = 1;
+    skyPhaseAge = 0;
+    applySkySample(SKY_PALETTES[skyPhaseIndex]);
+  }
+
+  function beginSkyTransition(nextIdx) {
+    skyBlendFrom = skyPhaseIndex;
+    skyBlendTo = ((nextIdx % 3) + 3) % 3;
+    skyPhaseIndex = skyBlendTo;
+    skyBlend = 0;
+    skyPhaseAge = 0;
+  }
+
+  function updateSkyCycle(dt) {
+    if (!skyClockRunning || paused || countdownActive || gameOver || !playing) {
+      // Still animate props gently when visible during countdown/menu
+    } else {
+      skyPhaseAge += dt;
+      if (skyBlend < 1) {
+        skyBlend = Math.min(1, skyBlend + dt / SKY_LERP_SEC);
+        applySkySample(sampleSkyPalette(skyBlendFrom, skyBlendTo, skyBlend));
+      } else if (skyPhaseAge >= SKY_PHASE_SEC) {
+        beginSkyTransition((skyPhaseIndex + 1) % 3);
+        applySkySample(sampleSkyPalette(skyBlendFrom, skyBlendTo, 0));
+      }
+    }
+
+    // Prop motion (clouds / birds / stars) — runs whenever not paused
+    if (!paused) {
+      for (const c of cloudDrift) {
+        c.mesh.position.x += c.speed * dt;
+        if (c.mesh.position.x > c.span * 0.5) c.mesh.position.x = -c.span * 0.5;
+      }
+      const t = performance.now() * 0.001;
+      for (const f of birdFlocks) {
+        f.group.position.x += f.speed * dt;
+        if (f.group.position.x > 22) f.group.position.x = -22;
+        f.group.position.y = f.baseY + Math.sin(t * 1.6 + f.phase) * 0.45;
+        for (let i = 0; i < f.birds.length; i++) {
+          const bird = f.birds[i];
+          const flap = Math.sin(t * 10 + f.phase + i) * 0.55;
+          if (bird.userData.leftWing) bird.userData.leftWing.rotation.z = flap;
+          if (bird.userData.rightWing) bird.userData.rightWing.rotation.z = -flap;
+          bird.position.y = Math.sin(t * 3 + i + f.phase) * 0.12;
+        }
+      }
+      for (const s of starTwinkle) {
+        const pulse = 0.55 + 0.45 * Math.sin(t * s.speed + s.phase);
+        s.mesh.scale.setScalar(0.7 + pulse * 0.55);
+        if (s.mesh.material && s.mesh.material.emissiveIntensity != null) {
+          s.mesh.material.emissiveIntensity = 0.5 + pulse * 0.9;
+        }
+      }
+    }
+
+    // Follow chase cam so props stay framed
+    skyRoot.position.x = cameraX;
+    skyRoot.position.z = cameraZ;
+  }
+
+  function formatRunTimer(sec) {
+    const totalMs = Math.max(0, Math.floor((sec || 0) * 1000));
+    const m = Math.floor(totalMs / 60000);
+    const s = Math.floor((totalMs % 60000) / 1000);
+    const ms = totalMs % 1000;
+    return m + ":" + String(s).padStart(2, "0") + "." + String(ms).padStart(3, "0");
+  }
+
+  function syncRunTimerHud() {
+    if (!runTimerEl) return;
+    runTimerEl.textContent = formatRunTimer(runTimeSec);
+  }
+
+  function showRunTimer(show) {
+    if (!runTimerEl) return;
+    runTimerEl.classList.toggle("hidden", !show);
+  }
+
+  function hideCountdown() {
+    if (countdownEl) {
+      countdownEl.classList.add("hidden");
+      countdownEl.setAttribute("aria-hidden", "true");
+    }
+    if (countdownText) {
+      countdownText.textContent = "";
+      countdownText.classList.remove("is-start");
+    }
+  }
+
+  function showCountdownLabel(label, isStart) {
+    if (!countdownEl || !countdownText) return;
+    countdownText.textContent = label;
+    countdownText.classList.toggle("is-start", !!isStart);
+    // retrigger CSS animation
+    countdownText.style.animation = "none";
+    void countdownText.offsetWidth;
+    countdownText.style.animation = "";
+    countdownEl.classList.remove("hidden");
+    countdownEl.setAttribute("aria-hidden", "false");
+    try { AudioFX.uiClick(); } catch (_) {}
+  }
+
+  function startCountdownSequence() {
+    countdownActive = true;
+    canControl = false;
+    skyClockRunning = false;
+    runTimeSec = 0;
+    runTimerFrozen = false;
+    syncRunTimerHud();
+    showRunTimer(true);
+    snapSkyPhase(0); // Day ready; clock starts on START
+    countdownQueue = ["3", "2", "1", "START!"];
+    countdownStepTimer = 0;
+    const first = countdownQueue.shift();
+    showCountdownLabel(first, first === "START!");
+  }
+
+  function finishCountdownStart() {
+    hideCountdown();
+    countdownActive = false;
+    canControl = true;
+    skyClockRunning = true;
+    skyPhaseAge = 0;
+    snapSkyPhase(0);
+    runTimeSec = 0;
+    runTimerFrozen = false;
+    syncRunTimerHud();
+    // Ensure BGM as on Play today
+    if (!AudioFX.isMuted()) {
+      try { AudioFX.startMusic(); } catch (_) {}
+    }
+  }
+
+  function updateCountdown(dt) {
+    if (!countdownActive || paused) return;
+    countdownStepTimer += dt;
+    if (countdownStepTimer < COUNTDOWN_STEP_SEC) return;
+    countdownStepTimer = 0;
+    if (!countdownQueue || countdownQueue.length === 0) {
+      finishCountdownStart();
+      return;
+    }
+    const next = countdownQueue.shift();
+    showCountdownLabel(next, next === "START!");
+    if (next === "START!") {
+      // Hold START briefly then enable — next tick after STEP finishes
+      // Keep one more empty wait via pushing sentinel handled next step
+      countdownQueue = []; // next step calls finishCountdownStart
+    }
+  }
 
   // Shared materials
   const matCache = new Map();
@@ -495,7 +1136,349 @@
     hl.position.set(dir > 0 ? bodyW * 0.48 : -bodyW * 0.48, 0.28, 0);
     g.add(hl);
     g.userData.bodyW = bodyW;
+    g.userData.kind = "car";
     return g;
+  }
+
+  function makeTruck(colorHex, width, dir) {
+    const g = new THREE.Group();
+    const bodyW = width * CELL * 0.94;
+    const cabW = Math.min(0.85, bodyW * 0.32);
+    const cargoW = bodyW - cabW - 0.06;
+    const cabX = dir > 0 ? bodyW * 0.5 - cabW * 0.5 : -bodyW * 0.5 + cabW * 0.5;
+    const cargoX = dir > 0 ? -bodyW * 0.5 + cargoW * 0.5 : bodyW * 0.5 - cargoW * 0.5;
+    const cargo = new THREE.Mesh(
+      new THREE.BoxGeometry(cargoW, 0.72, 0.7),
+      mat(shadeHex(colorHex, -15), { flat: true })
+    );
+    cargo.position.set(cargoX, 0.5, 0);
+    cargo.castShadow = true;
+    g.add(cargo);
+    const cab = new THREE.Mesh(
+      new THREE.BoxGeometry(cabW, 0.55, 0.62),
+      mat(colorHex, { flat: true })
+    );
+    cab.position.set(cabX, 0.42, 0);
+    cab.castShadow = true;
+    g.add(cab);
+    const glass = new THREE.Mesh(
+      new THREE.BoxGeometry(cabW * 0.28, 0.22, 0.48),
+      mat("#a8d8ea", { flat: true })
+    );
+    glass.position.set(dir > 0 ? cabX + cabW * 0.28 : cabX - cabW * 0.28, 0.5, 0);
+    g.add(glass);
+    const wheelGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.1, 8);
+    const wheelMat = mat("#171725", { flat: true });
+    const axles = [-bodyW * 0.38, -bodyW * 0.12, bodyW * 0.34];
+    axles.forEach((ax) => {
+      [-1, 1].forEach((sz) => {
+        const wh = new THREE.Mesh(wheelGeo, wheelMat);
+        wh.rotation.z = Math.PI / 2;
+        wh.position.set(ax, 0.12, sz * 0.32);
+        g.add(wh);
+      });
+    });
+    const hl = new THREE.Mesh(
+      new THREE.BoxGeometry(0.07, 0.1, 0.16),
+      mat("#fff3a3")
+    );
+    hl.position.set(dir > 0 ? bodyW * 0.48 : -bodyW * 0.48, 0.32, 0);
+    g.add(hl);
+    g.userData.bodyW = bodyW;
+    g.userData.kind = "truck";
+    return g;
+  }
+
+  function makeMotorcycle(colorHex, width, dir) {
+    const g = new THREE.Group();
+    const bodyW = Math.max(0.45, width * CELL * 0.95);
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(bodyW * 0.7, 0.14, 0.22),
+      mat(colorHex, { flat: true })
+    );
+    frame.position.y = 0.28;
+    frame.castShadow = true;
+    g.add(frame);
+    const tank = new THREE.Mesh(
+      new THREE.BoxGeometry(bodyW * 0.35, 0.16, 0.2),
+      mat(shadeHex(colorHex, 20), { flat: true })
+    );
+    tank.position.set(dir > 0 ? -0.02 : 0.02, 0.38, 0);
+    g.add(tank);
+    const seat = new THREE.Mesh(
+      new THREE.BoxGeometry(bodyW * 0.28, 0.1, 0.2),
+      mat("#2b2d42", { flat: true })
+    );
+    seat.position.set(dir > 0 ? -bodyW * 0.12 : bodyW * 0.12, 0.36, 0);
+    g.add(seat);
+    const wheelGeo = new THREE.BoxGeometry(0.16, 0.16, 0.08);
+    const wheelMat = mat("#171725", { flat: true });
+    const front = new THREE.Mesh(wheelGeo, wheelMat);
+    front.position.set(dir > 0 ? bodyW * 0.32 : -bodyW * 0.32, 0.14, 0);
+    g.add(front);
+    const rear = new THREE.Mesh(wheelGeo, wheelMat);
+    rear.position.set(dir > 0 ? -bodyW * 0.28 : bodyW * 0.28, 0.14, 0);
+    g.add(rear);
+    // rider cube (chibi)
+    const rider = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 0.28, 0.18),
+      mat("#ffb4a2", { flat: true })
+    );
+    rider.position.set(dir > 0 ? -bodyW * 0.06 : bodyW * 0.06, 0.55, 0);
+    rider.castShadow = true;
+    g.add(rider);
+    const helmet = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.14, 0.16),
+      mat("#3a86ff", { flat: true })
+    );
+    helmet.position.set(rider.position.x, 0.74, 0);
+    g.add(helmet);
+    const hl = new THREE.Mesh(
+      new THREE.BoxGeometry(0.05, 0.06, 0.08),
+      mat("#fff3a3")
+    );
+    hl.position.set(dir > 0 ? bodyW * 0.38 : -bodyW * 0.38, 0.3, 0);
+    g.add(hl);
+    g.userData.bodyW = bodyW;
+    g.userData.kind = "moto";
+    return g;
+  }
+
+  function makeVehicle(car, dir) {
+    const kind = car.kind || "car";
+    let mesh;
+    if (kind === "truck") mesh = makeTruck(car.color, car.w, dir);
+    else if (kind === "moto") mesh = makeMotorcycle(car.color, car.w, dir);
+    else mesh = makeCar(car.color, car.w, dir);
+    mesh.userData.kind = kind;
+    mesh.userData.w = car.w;
+    return mesh;
+  }
+
+  function pickRoadVehicleKind() {
+    // Per-road dedication: cars most common, trucks/motos less — mix across world, not within a lane
+    const r = Math.random();
+    if (r < 0.62) return "car";
+    if (r < 0.84) return "truck";
+    return "moto";
+  }
+
+  function makeVehicleData(kind) {
+    const k = kind || "car";
+    let w, speedMul, hitH, color;
+    if (k === "truck") {
+      w = 2.05 + Math.random() * 0.55;
+      speedMul = 0.7 + Math.random() * 0.12;
+      hitH = 0.88;
+      const truckPalette = ["#6c757d", "#495057", "#8d6e63", "#ef476f", "#118ab2", "#f77f00"];
+      color = truckPalette[Math.floor(Math.random() * truckPalette.length)];
+    } else if (k === "moto") {
+      w = 0.52 + Math.random() * 0.22;
+      speedMul = 1.28 + Math.random() * 0.22;
+      hitH = 0.52;
+      color = COLORS.carPalette[Math.floor(Math.random() * COLORS.carPalette.length)];
+    } else {
+      w = 1.15 + Math.random() * 0.45;
+      speedMul = 0.95 + Math.random() * 0.1;
+      hitH = 0.72;
+      color = COLORS.carPalette[Math.floor(Math.random() * COLORS.carPalette.length)];
+    }
+    return { kind: k, w, speedMul, hitH, color };
+  }
+
+  // ─── Straw-hat fisher NPC ─────────────────────────────────
+  function makeFisherMesh() {
+    const root = new THREE.Group();
+    const idle = new THREE.Group();
+    root.add(idle);
+    const skin = "#e8b896";
+    const shirt = "#4cc9f0";
+    const pants = "#4361ee";
+    const straw = "#e9c46a";
+    const strawDark = "#b08900";
+    const torso = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.26, 0.2),
+      mat(shirt, { flat: true })
+    );
+    torso.position.y = 0.28;
+    torso.castShadow = true;
+    idle.add(torso);
+    [-1, 1].forEach((side) => {
+      const leg = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 0.14, 0.12),
+        mat(pants, { flat: true })
+      );
+      leg.position.set(side * 0.08, 0.12, 0);
+      idle.add(leg);
+      const shoe = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12, 0.06, 0.16),
+        mat("#2b2d42", { flat: true })
+      );
+      shoe.position.set(side * 0.08, 0.04, 0.02);
+      idle.add(shoe);
+      const arm = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.18, 0.08),
+        mat(skin, { flat: true })
+      );
+      arm.position.set(side * 0.2, 0.28, 0);
+      idle.add(arm);
+    });
+    const head = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.36, 0.36),
+      mat(skin, { flat: true })
+    );
+    head.position.y = 0.58;
+    head.castShadow = true;
+    idle.add(head);
+    // straw hat: brim + crown
+    const brim = new THREE.Mesh(
+      new THREE.BoxGeometry(0.62, 0.06, 0.62),
+      mat(straw, { flat: true })
+    );
+    brim.position.y = 0.78;
+    idle.add(brim);
+    const crown = new THREE.Mesh(
+      new THREE.BoxGeometry(0.34, 0.18, 0.34),
+      mat(strawDark, { flat: true })
+    );
+    crown.position.y = 0.9;
+    idle.add(crown);
+    // fishing rod
+    const rod = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 0.04, 0.9),
+      mat("#704522", { flat: true })
+    );
+    rod.position.set(0.28, 0.55, 0.35);
+    rod.rotation.x = -0.55;
+    idle.add(rod);
+    const line = new THREE.Mesh(
+      new THREE.BoxGeometry(0.02, 0.55, 0.02),
+      mat("#edf2f4", { flat: true })
+    );
+    line.position.set(0.28, 0.28, 0.78);
+    idle.add(line);
+    root.userData.idle = idle;
+    return root;
+  }
+
+  function hideSpeechBubble() {
+    if (!speechBubble) return;
+    speechBubble.classList.add("hidden");
+    speechBubble.setAttribute("aria-hidden", "true");
+  }
+
+  function clearFisher() {
+    hideSpeechBubble();
+    if (fisher && fisher.mesh) {
+      worldRoot.remove(fisher.mesh);
+      disposeObject(fisher.mesh);
+    }
+    fisher = null;
+  }
+
+  function placeFisher() {
+    clearFisher();
+    // Prefer an early grass row past the safe start so player meets them on the path
+    let target = null;
+    for (let i = SAFE_START_ROWS; i < Math.min(rows.length, SAFE_START_ROWS + 8); i++) {
+      const row = rows[i];
+      if (!row || row.type !== "grass") continue;
+      const candidates = [];
+      for (let c = 0; c < COLS; c++) {
+        if (row.trees && row.trees.includes(c)) continue;
+        if (c === PLAYER_COL_START && i <= SAFE_START_ROWS + 1) continue;
+        candidates.push(c);
+      }
+      if (!candidates.length) continue;
+      // Prefer side columns for "riverside" vibe
+      candidates.sort((a, b) => {
+        const sideScore = (c) => Math.min(c, COLS - 1 - c);
+        return sideScore(a) - sideScore(b);
+      });
+      const col = candidates[0];
+      target = { row: i, col };
+      break;
+    }
+    if (!target) return;
+    // Soft-block: treat as tree so player can't stand on them
+    const grow = rows[target.row];
+    if (grow && grow.type === "grass") {
+      if (!grow.trees.includes(target.col)) grow.trees.push(target.col);
+    }
+    const mesh = makeFisherMesh();
+    mesh.position.set(colToX(target.col), 0, rowToZ(target.row));
+    // Face slightly toward path center / camera forward
+    mesh.rotation.y = target.col < PLAYER_COL_START ? -0.4 : 0.4;
+    worldRoot.add(mesh);
+    fisher = {
+      row: target.row,
+      col: target.col,
+      mesh,
+      lineIdx: 0,
+      lineTimer: 0,
+      bob: 0,
+      shownOnce: false,
+    };
+  }
+
+  function updateFisher(dt) {
+    if (!fisher || !fisher.mesh) {
+      hideSpeechBubble();
+      return;
+    }
+    fisher.bob += dt;
+    const idle = fisher.mesh.userData.idle;
+    if (idle) {
+      idle.position.y = Math.sin(fisher.bob * 2.2) * 0.03;
+      idle.rotation.z = Math.sin(fisher.bob * 1.4) * 0.04;
+    }
+    // Keep mesh Z synced if rows ever shifted (they don't) — still update pos
+    fisher.mesh.position.set(colToX(fisher.col), 0, rowToZ(fisher.row));
+
+    if (!playing || gameOver || !player) {
+      hideSpeechBubble();
+      return;
+    }
+    const prow = playerVisualRow();
+    const near = Math.abs(prow - fisher.row) <= FISHER_NEAR_ROWS;
+    if (!near) {
+      hideSpeechBubble();
+      fisher.lineTimer = 0;
+      return;
+    }
+    if (!paused && canControl) {
+      fisher.lineTimer += dt;
+      if (!fisher.shownOnce || fisher.lineTimer >= FISHER_LINE_SEC) {
+        fisher.lineTimer = 0;
+        if (fisher.shownOnce) {
+          fisher.lineIdx = (fisher.lineIdx + 1) % FISHER_LINES.length;
+        } else {
+          fisher.lineIdx = 0; // lead with fishing line
+          fisher.shownOnce = true;
+        }
+        if (speechBubbleText) speechBubbleText.textContent = FISHER_LINES[fisher.lineIdx];
+      }
+    }
+    if (speechBubbleText && !speechBubbleText.textContent) {
+      speechBubbleText.textContent = FISHER_LINES[fisher.lineIdx];
+    }
+    // Project world → overlay coords inside #app
+    _fisherProj.set(colToX(fisher.col), 1.55, rowToZ(fisher.row));
+    _fisherProj.project(camera);
+    if (_fisherProj.z > 1) {
+      hideSpeechBubble();
+      return;
+    }
+    const app = document.getElementById("app");
+    const rect = app ? app.getBoundingClientRect() : canvas.getBoundingClientRect();
+    const sx = (_fisherProj.x * 0.5 + 0.5) * rect.width;
+    const sy = (-_fisherProj.y * 0.5 + 0.5) * rect.height;
+    if (speechBubble) {
+      speechBubble.style.left = sx + "px";
+      speechBubble.style.top = Math.max(8, sy - 8) + "px";
+      speechBubble.classList.remove("hidden");
+      speechBubble.setAttribute("aria-hidden", "false");
+    }
   }
 
   function shadeHex(hex, amt) {
@@ -683,6 +1666,7 @@
       disposeObject(entry.group);
     });
     rowMeshes.clear();
+    clearFisher();
     if (playerMesh) {
       worldRoot.remove(playerMesh);
       disposeObject(playerMesh);
@@ -715,8 +1699,13 @@
         for (let i = 0; i < row.cars.length; i++) {
           const car = row.cars[i];
           let mesh = entry.cars[i];
-          if (!mesh) {
-            mesh = makeCar(car.color, car.w, row.dir);
+          const needNew = !mesh || mesh.userData.kind !== (car.kind || "car") || mesh.userData.w !== car.w;
+          if (needNew) {
+            if (mesh) {
+              entry.group.remove(mesh);
+              disposeObject(mesh);
+            }
+            mesh = makeVehicle(car, row.dir);
             entry.group.add(mesh);
             entry.cars[i] = mesh;
           }
@@ -757,7 +1746,7 @@
       }
     } else {
       for (const car of row.cars) {
-        const m = makeCar(car.color, car.w, row.dir);
+        const m = makeVehicle(car, row.dir);
         m.position.x = colToX(car.x + car.w / 2 - 0.5);
         m.rotation.y = row.dir > 0 ? 0 : Math.PI;
         group.add(m);
@@ -856,7 +1845,15 @@
       cameraZ - CAM_BACK + oz
     );
     camera.lookAt(cameraX, CAM_LOOK_Y, cameraZ + CAM_LOOK_AHEAD);
-    sun.position.set(cameraX + 10, 10, cameraZ + 2);
+    const sunY = sunMeshGroup ? sunMeshGroup.position.y : 10;
+    const lightY = Math.max(2.5, sunY * 0.85 + 2);
+    sun.position.set(cameraX + 10, lightY, cameraZ + 2);
+    rim.position.set(cameraX - 6, 6, cameraZ - 4);
+    if (typeof updateSkyCycle === "function") {
+      // position follow only; dt handled in update/render
+      skyRoot.position.x = cameraX;
+      skyRoot.position.z = cameraZ;
+    }
   }
 
   function syncVisibleWorld() {
@@ -1982,39 +2979,47 @@
   function makeRoadRow(index) {
     const d = difficulty();
     const dir = Math.random() < 0.5 ? 1 : -1;
+    const vehicleKind = pickRoadVehicleKind();
     let speedMag = 0.65 + d * 1.1 + Math.random() * 0.35;
     if (Math.random() < 0.25) {
       speedMag *= 1.15 + Math.random() * 0.15;
     }
     const speed = speedMag * dir;
-    const carW = 1.2 + Math.random() * 0.45;
-    const gap = 5.2 - d * 1.0 + Math.random() * 1.0;
+    const baseGap = 5.2 - d * 1.0 + Math.random() * 1.0;
     const cars = [];
     const edgePad = 1.2;
+
+    function pushVehicle(x) {
+      const spec = makeVehicleData(vehicleKind);
+      cars.push({
+        x,
+        w: spec.w,
+        color: spec.color,
+        kind: spec.kind,
+        speedMul: spec.speedMul,
+        hitH: spec.hitH,
+      });
+      const gapExtra = spec.kind === "truck" ? 1.1 : spec.kind === "moto" ? -0.35 : 0;
+      return spec.w + baseGap + gapExtra;
+    }
+
     if (dir > 0) {
-      let x = -carW - edgePad - Math.random() * gap;
-      const leftmost = -COLS - 8;
+      let x = -1.4 - edgePad - Math.random() * baseGap;
+      const leftmost = -COLS - 10;
       while (x > leftmost) {
-        cars.push({
-          x,
-          w: carW,
-          color: COLORS.carPalette[Math.floor(Math.random() * COLORS.carPalette.length)],
-        });
-        x -= carW + gap;
+        const step = pushVehicle(x);
+        x -= step;
       }
     } else {
-      let x = COLS + edgePad + Math.random() * gap;
-      const rightmost = COLS + 8;
+      let x = COLS + edgePad + Math.random() * baseGap;
+      const rightmost = COLS + 10;
       while (x < rightmost) {
-        cars.push({
-          x,
-          w: carW,
-          color: COLORS.carPalette[Math.floor(Math.random() * COLORS.carPalette.length)],
-        });
-        x += carW + gap;
+        const step = pushVehicle(x);
+        x += step;
       }
     }
-    return { type: "road", index, dir, speed, cars, carW };
+    const carW = cars.length ? cars[0].w : 1.3;
+    return { type: "road", index, dir, speed, cars, carW, vehicleKind };
   }
 
   function ensureRowsAhead() {
@@ -2054,6 +3059,13 @@
     optionsReturnMode = "menu";
     idleTime = 0;
     resetCombo();
+    canControl = false;
+    countdownActive = true;
+    skyClockRunning = false;
+    runTimeSec = 0;
+    runTimerFrozen = false;
+    syncRunTimerHud();
+    showRunTimer(true);
     syncPauseBtn();
 
     player = {
@@ -2080,17 +3092,20 @@
 
     ensurePlayerMesh();
     syncVisibleWorld();
+    placeFisher();
     updatePlayerVisual();
     updateCamera(1);
+    snapSkyPhase(0);
 
     hideOverlay();
+    startCountdownSequence();
     lastTs = performance.now();
     cancelAnimationFrame(animId);
     loop(lastTs);
   }
 
   function tryHop(dx, dy) {
-    if (!playing || gameOver || paused) return;
+    if (!playing || gameOver || paused || !canControl || countdownActive) return;
     if (player.hopT < 1) {
       hopQueue = [{ dx, dy }];
       return;
@@ -2168,7 +3183,7 @@
         const cx = car.x;
         const cy = ri;
         const cw = car.w;
-        const ch = 0.72;
+        const ch = car.hitH != null ? car.hitH : 0.72;
         const padY = (1 - ch) / 2;
         if (rectsOverlap(pb.x, pb.y, pb.w, pb.h, cx, cy + padY, cw, ch)) {
           return true;
@@ -2485,6 +3500,12 @@
     gameOver = true;
     playing = false;
     paused = false;
+    canControl = false;
+    countdownActive = false;
+    skyClockRunning = false;
+    runTimerFrozen = true;
+    hideCountdown();
+    hideSpeechBubble();
     syncPauseBtn();
     // Hard-cut BGM immediately; hit SFX still plays
     AudioFX.stopMusic();
@@ -2558,6 +3579,13 @@
     paused = false;
     playing = false;
     gameOver = false;
+    canControl = false;
+    countdownActive = false;
+    skyClockRunning = false;
+    runTimerFrozen = true;
+    hideCountdown();
+    hideSpeechBubble();
+    showRunTimer(false);
     optionsReturnMode = "menu";
     AudioFX.stopMusic();
     hideAllPanels();
@@ -2566,6 +3594,7 @@
     overlay.classList.add("visible");
     syncPauseBtn();
     setupPreview();
+    snapSkyPhase(1); // sunset mood on menu
   }
 
   function showOptions(from) {
@@ -2667,11 +3696,29 @@
       }
     }
 
-    if (paused) return;
+    if (paused) {
+      updateSkyCycle(0);
+      return;
+    }
 
     if (!playing) {
       if (shake > 0) shake = Math.max(0, shake - dt * 22);
       updatePlayerDeathFade(dt);
+      updateSkyCycle(dt);
+      return;
+    }
+
+    updateCountdown(dt);
+    updateSkyCycle(dt);
+
+    if (canControl && !countdownActive && !runTimerFrozen) {
+      runTimeSec += dt;
+      syncRunTimerHud();
+    }
+
+    // Freeze hops & traffic until countdown finishes
+    if (countdownActive || !canControl) {
+      if (shake > 0) shake = Math.max(0, shake - dt * 30);
       return;
     }
 
@@ -2686,7 +3733,8 @@
       if (row.type !== "road") continue;
       const boost = 1 + d * 0.15;
       for (const car of row.cars) {
-        car.x += row.speed * boost * dt;
+        const mul = car.speedMul != null ? car.speedMul : 1;
+        car.x += row.speed * boost * mul * dt;
       }
       const margin = 4;
       for (const car of row.cars) {
@@ -2731,6 +3779,7 @@
     updatePlayerVisual();
     applyIdlePose(dt || 0.016);
     updateCamera(dt || 0.016);
+    updateFisher(dt || 0.016);
     renderer.render(scene, camera);
   }
 
@@ -2772,6 +3821,7 @@
     idleTime = 0;
     ensurePlayerMesh();
     syncVisibleWorld();
+    placeFisher();
     updatePlayerVisual();
     updateCamera(1);
     lastTs = performance.now();
@@ -2785,7 +3835,8 @@
         for (const row of rows) {
           if (row.type !== "road") continue;
           for (const car of row.cars) {
-            car.x += row.speed * dt;
+            const mul = car.speedMul != null ? car.speedMul : 1;
+            car.x += row.speed * mul * dt;
             if (row.dir > 0 && car.x > COLS + 4) car.x = -car.w - 1.2;
             if (row.dir < 0 && car.x + car.w < -4) car.x = COLS + 1.2;
           }
@@ -2902,7 +3953,7 @@
   }, { passive: true });
 
   canvas.addEventListener("click", (e) => {
-    if (!playing || gameOver || paused) return;
+    if (!playing || gameOver || paused || !canControl || countdownActive) return;
     tryHop(0, 1);
   });
 
