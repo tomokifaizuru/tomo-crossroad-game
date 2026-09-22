@@ -1,6 +1,6 @@
 # Tomo Crossroad
 
-Version: **1.17**
+Version: **1.21**
 
 A Crossy Road–style hop-across-the-road game with **real Three.js 3D**. Mobile browsers (desktop too). Plain HTML + CSS + vanilla JavaScript + Three.js via CDN — **no build step**, no frameworks.
 
@@ -56,7 +56,7 @@ During a run, **Pause** (HUD ⏸ or **Esc**) freezes cars, hops, and score. A **
 
 Before each run you get a **main menu** with:
 
-- Title **Tomo Crossroad** · version **v1.20**
+- Title **Tomo Crossroad** · version **v1.21**
 - **Player name** field (max 12 chars, saved as `tomo-crossroad-player-name`; empty → **Player**)
 - **Cap Kid color** carousel — swipe or ◀ ▶ between 5 colorways (large preview + dots); persisted via `tomo-crossroad-character`
 - **Play**, **Leaderboard**, and **Options** buttons
@@ -71,7 +71,7 @@ Before each run you get a **main menu** with:
 - **Key Mapping** — click a bind → press a key; persists as `tomo-crossroad-keymap`; **Reset controls** restores defaults
 - Defaults after the v1.04 L/R invert: Left = ArrowLeft / A → **+col** (screen-left); Right = ArrowRight / D → **−col** (screen-right)
 - Touch swipes use the same screen L/R invert (swipe left → screen-left)
-- **Mobile buttons** (v1.20) — on-screen Left / Forward / Right; same hop mapping as keys/swipes
+- **Mobile buttons** (v1.21) — on-screen Left / Forward / Right; same hop mapping as keys/swipes; display:none when inactive so menu cannot steal taps
 
 | Id | Label | Look |
 |----|-------|------|
@@ -137,6 +137,16 @@ Real **PerspectiveCamera** behind/above the player, looking forward along the ho
 - Cap Kid richer **idle** (breathe, weight shift, arm sway, blink) and **hop** squash-stretch / limb tuck on menu and in-run
 
 ## Changelog
+
+### v1.21
+- **Invisible-menu tap steal fix** — root cause: `#overlay` without `.visible` used `pointer-events: none`, but `.panel` / buttons keep `pointer-events: auto`. In CSS, children with `auto` still receive hits when the parent is `none`, so after the menu faded out (opacity 0) Play/Options/etc. still sat over the screen on Android and stole taps from Left/GO/Right
+- When `#overlay` lacks `.visible`: `visibility: hidden` + `pointer-events: none`, and **force** `#overlay:not(.visible), #overlay:not(.visible) * { pointer-events: none !important; }`; overlay `z-index: 40` (above mobile controls)
+- Optional `overlay.inert = true` while hidden (via `syncTouchPad`) for supporting browsers
+- `#mobileControls` when not `.active`: `display: none !important` (zero hit target during menu); when `.active`: `display: flex`, `z-index: 35` (above touchPad, below overlay)
+- Hop buttons fire on **pointerup / touchend** inside button bounds (more reliable on Android than pointerdown alone); `preventDefault` on the press that fires; mapping unchanged (Left `tryHop(1,0)`, Forward `tryHop(0,1)`, Right `tryHop(-1,0)`)
+- `syncTouchPad()` on every mode change (hide/show overlays, reset, countdown end, pause/resume, game over, beginPlay path)
+- `#touchPad` stays secondary (`pointer-events: none` when inactive, z-index 10 — does not cover menu or sit above mobile buttons)
+- Menu / Options / Pause / Leaderboard / cache-bust **v1.21**
 
 ### v1.20
 - **Mobile on-screen buttons** — fixed `#mobileControls` bar at the bottom of `#app` with three large tap targets: **← Left**, **↑ GO** (forward), **Right →**

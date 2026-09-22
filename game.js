@@ -976,6 +976,7 @@
     runTimeSec = 0;
     runTimerFrozen = false;
     syncRunTimerHud();
+    syncTouchPad();
     // Ensure BGM as on Play today
     if (!AudioFX.isMuted()) {
       try { AudioFX.startMusic(); } catch (_) {}
@@ -4042,6 +4043,7 @@
   function hideOverlay() {
     cancelRemap();
     overlay.classList.remove("visible");
+    try { overlay.inert = true; } catch (_) { /* older browsers */ }
     syncTouchPad();
   }
 
@@ -4297,7 +4299,7 @@
     tryHop(m[0], m[1]);
   });
 
-  // ─── Input: pointer + touch on #touchPad (v1.19) + mobile buttons (v1.20) ───
+  // ─── Input: pointer + touch on #touchPad (v1.19) + mobile buttons (v1.21) ───
   // Root cause (v1.15–v1.18): preventDefault() on pointerdown during play
   // cancelled the pointer on many Android Chrome/WebViews (pointercancel),
   // cleared gestureStart, so pointerup never hopped. Touch fallback was
@@ -4325,8 +4327,16 @@
   }
 
   function syncTouchPad() {
-    const active = !!(playing && !paused && !gameOver && !overlayIsVisible());
-    if (touchPad) touchPad.classList.toggle("active", active);
+    const ovVisible = overlayIsVisible();
+    // v1.21: inert while hidden so invisible menu UI cannot receive focus/hits
+    if (overlay) {
+      try { overlay.inert = !ovVisible; } catch (_) { /* older browsers */ }
+    }
+    const active = !!(playing && !paused && !gameOver && !ovVisible);
+    if (touchPad) {
+      touchPad.classList.toggle("active", active);
+      touchPad.setAttribute("aria-hidden", active ? "false" : "true");
+    }
     const mc = document.getElementById("mobileControls");
     if (mc) {
       mc.classList.toggle("active", active);
@@ -4514,15 +4524,23 @@
     touchPad.addEventListener("touchmove", onPlayTouchMove, { passive: false });
   }
 
-  // ─── Mobile on-screen hop buttons (v1.20) ─────────────────
+  // ─── Mobile on-screen hop buttons (v1.21) ─────────────────
   // Primary UX on touch/coarse devices; touchPad stays as backup above the bar.
-  // pointerdown/touchstart with preventDefault avoids 300ms delay / ghost clicks.
+  // Fire hop on pointerup/touchend inside button bounds (more reliable on Android
+  // than pointerdown alone). preventDefault on the press that fires to avoid ghost clicks.
   function bindMobileHopBtn(el, dx, dy) {
     if (!el) return;
     let armed = false;
+    let armedPointerId = null;
+    let touchArmed = false;
 
     function canMobileHop() {
       return !!(playing && !gameOver && !paused && canControl && !countdownActive && !overlayIsVisible());
+    }
+
+    function pointInside(clientX, clientY) {
+      const r = el.getBoundingClientRect();
+      return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
     }
 
     function fire(ev) {
@@ -4543,27 +4561,63 @@
       if (e.isPrimary === false) return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
       armed = true;
+      armedPointerId = e.pointerId;
+      touchArmed = false;
       pressVisual(true);
-      fire(e);
+      if (e.cancelable) { try { e.preventDefault(); } catch (_) {} }
+      e.stopPropagation();
     }, { passive: false });
 
-    el.addEventListener("pointerup", () => { armed = false; pressVisual(false); }, { passive: true });
-    el.addEventListener("pointercancel", () => { armed = false; pressVisual(false); }, { passive: true });
-    el.addEventListener("pointerleave", () => { pressVisual(false); }, { passive: true });
+    el.addEventListener("pointerup", (e) => {
+      if (!armed) return;
+      if (armedPointerId != null && e.pointerId !== armedPointerId) return;
+      armed = false;
+      armedPointerId = null;
+      pressVisual(false);
+      if (pointInside(e.clientX, e.clientY)) fire(e);
+    }, { passive: false });
+
+    el.addEventListener("pointercancel", () => {
+      armed = false;
+      armedPointerId = null;
+      pressVisual(false);
+    }, { passive: true });
+
+    el.addEventListener("pointerleave", () => {
+      pressVisual(false);
+    }, { passive: true });
 
     el.addEventListener("touchstart", (e) => {
-      // Backup when pointer events are flaky; dedupe via markGestureHandled + tryHop gates
+      // Backup when pointer events are flaky; if pointer already armed, ignore
       if (armed) {
         if (e.cancelable) { try { e.preventDefault(); } catch (_) {} }
         e.stopPropagation();
         return;
       }
+      touchArmed = true;
       pressVisual(true);
-      fire(e);
+      if (e.cancelable) { try { e.preventDefault(); } catch (_) {} }
+      e.stopPropagation();
     }, { passive: false });
 
-    el.addEventListener("touchend", () => { pressVisual(false); }, { passive: true });
-    el.addEventListener("touchcancel", () => { pressVisual(false); }, { passive: true });
+    el.addEventListener("touchend", (e) => {
+      if (armed) {
+        // pointer path owns this contact
+        touchArmed = false;
+        pressVisual(false);
+        return;
+      }
+      if (!touchArmed) return;
+      touchArmed = false;
+      pressVisual(false);
+      const t = e.changedTouches && e.changedTouches[0];
+      if (t && pointInside(t.clientX, t.clientY)) fire(e);
+    }, { passive: false });
+
+    el.addEventListener("touchcancel", () => {
+      touchArmed = false;
+      pressVisual(false);
+    }, { passive: true });
 
     el.addEventListener("click", (e) => {
       // Fallback for environments that only synthesize click

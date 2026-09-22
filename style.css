@@ -41,7 +41,7 @@ html, body {
 
 
 /* Full-screen play gesture pad (v1.19+) — under HUD (z15), above canvas (z1) */
-/* Bottom inset leaves room for #mobileControls on touch devices (v1.20) */
+/* Bottom inset leaves room for #mobileControls on touch devices (v1.21) */
 #touchPad {
   position: absolute;
   top: 0;
@@ -58,29 +58,26 @@ html, body {
   pointer-events: auto;
 }
 
-/* On-screen Left / Forward / Right (v1.20) — above touchPad, below overlay */
+/* On-screen Left / Forward / Right (v1.21) — above touchPad (10), below overlay (40+) */
+/* When inactive: display:none so zero hit target (opacity alone still steals taps on some Android) */
 #mobileControls {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 20;
-  display: flex;
+  z-index: 35;
+  display: none !important;
   flex-direction: row;
   align-items: stretch;
   gap: 8px;
   padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(to top, rgba(8, 10, 20, 0.72) 0%, rgba(8, 10, 20, 0.45) 70%, rgba(8, 10, 20, 0) 100%);
   pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.15s ease;
 }
 
 #mobileControls.active {
+  display: flex !important;
   pointer-events: auto;
-  opacity: 1;
-  visibility: visible;
 }
 
 .mobile-ctrl-btn {
@@ -400,16 +397,26 @@ a,
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.25s ease;
-  z-index: 30;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+  z-index: 40;
   padding: 16px;
   overflow-y: auto;
 }
 
 #overlay.visible {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
+}
+
+/* v1.21: children with pointer-events:auto still receive hits when parent is none.
+   Force every descendant to none while overlay is hidden so invisible menu buttons
+   cannot steal taps from Left/GO/Right on Android. */
+#overlay:not(.visible),
+#overlay:not(.visible) * {
+  pointer-events: none !important;
 }
 
 .panel {
@@ -425,7 +432,7 @@ a,
   box-shadow: 0 12px 40px rgba(0,0,0,0.45);
   pointer-events: auto;
   position: relative;
-  z-index: 31;
+  z-index: 41;
 }
 
 .panel.hidden {
@@ -1082,7 +1089,8 @@ a,
 @media (hover: hover) and (pointer: fine) {
   .desktop-only { display: inline; }
   .mobile-only { display: none; }
-  #mobileControls { display: none !important; }
+  #mobileControls,
+  #mobileControls.active { display: none !important; }
   #touchPad { bottom: 0; }
   #startBtn:hover,
   #againBtn:hover,
