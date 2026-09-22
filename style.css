@@ -281,40 +281,6 @@ a,
   100% { transform: scale(1.05); opacity: 0.92; }
 }
 
-#speechBubble {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform: translate(-50%, -100%);
-  max-width: min(220px, 70vw);
-  padding: 8px 12px;
-  background: #fff8e7;
-  color: #2b2d42;
-  border: 3px solid #2b2d42;
-  border-radius: 14px;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.25;
-  letter-spacing: 0.01em;
-  text-align: center;
-  pointer-events: none;
-  z-index: 18;
-  box-shadow: 0 4px 0 rgba(0,0,0,0.2);
-}
-
-#speechBubble::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -10px;
-  transform: translateX(-50%);
-  border: 8px solid transparent;
-  border-top-color: #2b2d42;
-}
-
-#speechBubble.hidden {
-  display: none;
-}
 
 #comboFlash {
   position: absolute;
@@ -422,7 +388,7 @@ a,
   margin-bottom: 16px;
 }
 
-/* Character select — carousel (v1.16) */
+/* Character select — carousel (v1.16+) */
 .char-select {
   margin-bottom: 14px;
   touch-action: pan-y;

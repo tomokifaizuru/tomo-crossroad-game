@@ -1,6 +1,6 @@
 # Tomo Crossroad
 
-Version: **1.15**
+Version: **1.17**
 
 A Crossy Road–style hop-across-the-road game with **real Three.js 3D**. Mobile browsers (desktop too). Plain HTML + CSS + vanilla JavaScript + Three.js via CDN — **no build step**, no frameworks.
 
@@ -56,7 +56,7 @@ During a run, **Pause** (HUD ⏸ or **Esc**) freezes cars, hops, and score. A **
 
 Before each run you get a **main menu** with:
 
-- Title **Tomo Crossroad** · version **v1.16**
+- Title **Tomo Crossroad** · version **v1.17**
 - **Player name** field (max 12 chars, saved as `tomo-crossroad-player-name`; empty → **Player**)
 - **Cap Kid color** carousel — swipe or ◀ ▶ between 5 colorways (large preview + dots); persisted via `tomo-crossroad-character`
 - **Play**, **Leaderboard**, and **Options** buttons
@@ -64,7 +64,7 @@ Before each run you get a **main menu** with:
 
 **Options** (from main menu or pause):
 
-- **Music track** — Eurobeat / Sky Spire / Dungeon Gate / Cloud Throne / Ivory Keep (`tomo-crossroad-bgm-track`); Preview button
+- **Music track** — Eurobeat / Sky Spire / Dungeon Gate / Cloud Throne / Ivory Keep / **Custom Track** (`tomo-crossroad-bgm-track`); Preview button
 - **Music volume** — 0–100 (`tomo-crossroad-volume`)
 - **SFX volume** — 0–100 (`tomo-crossroad-sfx-volume`); wired to `sfxGain`
 - Mute still silences everything
@@ -111,7 +111,8 @@ Every **50** points (50, 100, 150, 200, …):
   3. **Dungeon Gate** — darker heavier bass, slow ominous pulse (~96 BPM, ~60s); final-boss foyer mood
   4. **Cloud Throne** — mid-tempo march / eurobeat×dungeon hybrid (~140 BPM, ~62s)
   5. **Ivory Keep** — haunted majestic castle ascent (~152 BPM, ~60s); fuller non-chiptune mix — sine pads, warm saw leads, delayed echoes, rounded kicks (tempo matched to Tower of Dreams pace)
-- All tracks are **original** Web Audio compositions (sky-castle “Final Dungeon” mood — not copies of any specific piece). Changing track restarts BGM if playing; **Preview** on Options starts the selected track.
+  6. **Custom Track** — loops `assets/bgm-custom.mp3` via HTMLAudioElement (~82s); chiptune scheduler is skipped while this track is selected
+- Chiptune tracks are **original** Web Audio compositions (sky-castle “Final Dungeon” mood — not copies of any specific piece). Changing track restarts BGM if playing; **Preview** on Options starts the selected track (including Custom).
 - Music starts after **Play** or **Preview** (autoplay policy). Death **hard-cuts** BGM. Pause pauses and resumes mid-song.
 - **SFX:** hop, crash, UI click, score tick, and combo — Web Audio (no extra files).
 - **Mute:** HUD toggle silences **both** SFX and BGM (`tomo-crossroad-mute`).
@@ -121,7 +122,8 @@ Every **50** points (50, 100, 150, 200, …):
 
 - `index.html` — menu, name field, Leaderboard, Options, Pause, Cap Kid preview, game-over UI, HUD (score, hearts, run timer, countdown), Three.js CDN
 - `style.css` — mobile-first portrait UI, menu / leaderboard / options / pause panels, medal ranks, combo flash
-- `game.js` — Three.js scene, lanes, traffic, hop/collision, Cap Kid mesh + idle, combo, remappable input, pause, online + local leaderboard, synthesized audio
+- `game.js` — Three.js scene, lanes, traffic, hop/collision, Cap Kid mesh + idle/hop anim, combo, remappable input, pause, online + local leaderboard, synthesized audio + Custom Track MP3
+- `assets/bgm-custom.mp3` — Custom Track loop (~82s)
 - `README.md` — this file
 
 ## Camera / 3D
@@ -129,11 +131,24 @@ Every **50** points (50, 100, 150, 200, …):
 Real **PerspectiveCamera** behind/above the player, looking forward along the hop direction (Subway Surfers vibe, slightly higher overhead since v1.05):
 
 - Low-poly meshes for Cap Kid, cars, ground strips, and trees
-- **Day / Sunset / Night** sky cycle (~30s active play per phase) with blocky sun, birds, brighter moon, stars, night skyline, and **street lights** that glow at night
+- **Day / Sunset / Night** sky cycle (~30s active play per phase) with blocky sun, birds, brighter moon, stars, denser city skyline (faint by day, glowing windows at night), **street lights**, and **vehicle headlights** that sync with night ambience
 - Traffic still Crossy Road–style: each **road lane** is one vehicle type (car / truck / moto); vehicles travel left↔right and **enter only from road edges** (never spawn mid-lane)
-- Cap Kid gentle **idle** (bob / breathe / sway / blink) on menu and when not hopping
+- Cap Kid richer **idle** (breathe, weight shift, arm sway, blink) and **hop** squash-stretch / limb tuck on menu and in-run
 
 ## Changelog
+
+### v1.18
+- Fix: game froze after the first hop because a removed fisher spawn call still ran and crashed the loop.
+- Frame loop now catches errors so one bug cannot freeze the whole run.
+
+### v1.17
+- **Vehicle headlights** — emissive `#fff6c8` mats on car / truck / moto; intensity follows sky `lampGlow` (off by day, warm at sunset, bright at night); optional pooled SpotLights near the player
+- **Richer city skyline** — wider denser layered silhouette; faintly visible in day/sunset; window emissives follow night like street lamps
+- **Light-posts face the road** — arm scale flipped so lamps hang over the roadside (inward toward X=0), not outward
+- **Removed straw-hat fisher NPC + Tomo Shop ads** — spawn/update/speech-bubble/ad texture/soft-blocks cleared (no mesh/timer leaks)
+- **Custom Track** BGM — Options picker + Preview; loops `assets/bgm-custom.mp3`; persists as `custom` in `tomo-crossroad-bgm-track`; skips WebAudio chiptune scheduler while selected
+- **Cap Kid animation** — animatable arm/leg groups; clearer idle breathe/weight-shift/arm sway; hop squash → stretch → land squash with knee tuck
+- Menu / Options / Pause / Leaderboard / cache-bust **v1.17**
 
 ### v1.16
 - **Vehicle facing fix** — car / truck / moto meshes are built facing **+X** only; lane direction is applied solely via `mesh.rotation.y` (`0` for +X, `Math.PI` for −X). Removes the double-mirror that made some lanes look like reversing

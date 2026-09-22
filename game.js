@@ -205,8 +205,6 @@
   const countdownEl = document.getElementById("countdown");
   const countdownText = document.getElementById("countdownText");
   const runTimerEl = document.getElementById("runTimer");
-  const speechBubble = document.getElementById("speechBubble");
-  const speechBubbleText = document.getElementById("speechBubbleText");
   const charSelectEl = document.getElementById("charSelect");
   const charCarouselEl = document.getElementById("charCarousel");
   const charStageEl = document.getElementById("charStage");
@@ -279,27 +277,6 @@
   let skyClockRunning = false;
   let countdownQueue = null;
   let countdownStepTimer = 0;
-  let fisher = null; // { row, col, mesh, lineTimer, lineIdx, bob }
-  const FISHER_LINES = [
-    "HEY! NICE DAY FOR FISHING, AINT IT?",
-    "Howdy!",
-    "Nice hops!",
-    "Watch the road!",
-    "Catch anything yet?",
-    "Stay safe out there!",
-  ];
-  const FISHER_NEAR_ROWS = 4;
-  const FISHER_LINE_SEC = 3.6;
-  const _fisherProj = new THREE.Vector3();
-  let fisherNextScore = null; // score threshold for next fisher spawn
-  let fisherSoftCol = null; // soft-block col on fisher.row while active
-
-  // Tomo Shop roadside ads (v1.14)
-  let tomoShopTex = null;
-  let adSigns = []; // { row, col, mesh, soft }
-  let nextAdScore = 99999; // next score band to place an ad (set in resetAdSchedule)
-  let adsEverPlaced = 0;
-
   const SKY_PHASE_SEC = 30;
   const SKY_LERP_SEC = 2.5;
   const COUNTDOWN_STEP_SEC = 0.8;
@@ -336,7 +313,7 @@
   }
   try {
     const t = localStorage.getItem(BGM_TRACK_KEY);
-    if (t && ["eurobeat", "skyspire", "dungeongate", "cloudthrone", "ivorykeep"].includes(t)) bgmTrack = t;
+    if (t && ["eurobeat", "skyspire", "dungeongate", "cloudthrone", "ivorykeep", "custom"].includes(t)) bgmTrack = t;
   } catch (_) {}
   try {
     const raw = localStorage.getItem(KEYMAP_KEY);
@@ -461,31 +438,7 @@
   rim.position.set(-6, 6, -4);
   scene.add(rim);
 
-  // Tomo Shop ad texture (GitHub Pages + local relative path)
-  try {
-    const _texLoader = new THREE.TextureLoader();
-    _texLoader.load(
-      "assets/tomo-shop.png",
-      (tex) => {
-        tex.magFilter = THREE.LinearFilter;
-        tex.minFilter = THREE.LinearFilter;
-        tomoShopTex = tex;
-        // Refresh any ads that spawned before the bitmap arrived
-        for (const ad of adSigns) {
-          if (ad.mesh && ad.mesh.userData && ad.mesh.userData.adFaceMats) {
-            for (const m of ad.mesh.userData.adFaceMats) {
-              m.map = tex;
-              m.needsUpdate = true;
-            }
-          }
-        }
-      },
-      undefined,
-      () => console.warn("Tomo Shop texture failed to load (assets/tomo-shop.png)")
-    );
-  } catch (_) {}
-
-  // ─── Sky cycle palettes & soft sky props (v1.14) ───────────
+  // ─── Sky cycle palettes & soft sky props (v1.17) ───────────
   const SKY_PALETTES = [
     {
       id: "day",
@@ -509,7 +462,7 @@
       moonVisible: 0,
       birdsVisible: 1,
       starsVisible: 0,
-      skylineVisible: 0,
+      skylineVisible: 0.32,
     },
     {
       id: "sunset",
@@ -533,7 +486,7 @@
       moonVisible: 0,
       birdsVisible: 1,
       starsVisible: 0.15,
-      skylineVisible: 0.25,
+      skylineVisible: 0.55,
     },
     {
       id: "night",
@@ -686,25 +639,75 @@
   }
 
   function buildSkyline() {
+    // Wider, denser blocky city silhouette (far +Z). Visible faintly by day;
+    // windows glow with night / lampGlow.
     const g = new THREE.Group();
-    const bldg = blockMat("#0c0e18");
-    const win = blockMat("#ffd166", { emissive: "#ffaa33", emissiveIntensity: 1.2 });
-    let x = -18;
-    while (x < 18) {
-      const w = 1.2 + Math.random() * 2.2;
-      const h = 2.5 + Math.random() * 7;
-      const d = 1.0 + Math.random() * 1.4;
-      addBox(g, w, h, d, x + w * 0.5, h * 0.5, 0, bldg);
-      const floors = Math.max(1, Math.floor(h / 1.1));
+    const bldgFront = blockMat("#0c0e18");
+    const bldgMid = blockMat("#121628");
+    const bldgBack = blockMat("#0a0c14");
+    const winMats = [];
+    function makeWinMat(tint) {
+      const m = blockMat(tint, { emissive: tint, emissiveIntensity: 0 });
+      winMats.push(m);
+      return m;
+    }
+    const winWarm = makeWinMat("#ffd166");
+    const winCool = makeWinMat("#9ad0ff");
+    const winAmber = makeWinMat("#ffaa33");
+
+    function addBuilding(x, z, w, h, d, bodyMat, dens) {
+      addBox(g, w, h, d, x + w * 0.5, h * 0.5, z, bodyMat);
+      // Occasional rooftop step / antenna for silhouette variety
+      if (Math.random() < 0.35) {
+        const rw = w * (0.35 + Math.random() * 0.4);
+        const rh = 0.4 + Math.random() * 1.4;
+        addBox(g, rw, rh, d * 0.55, x + w * 0.5, h + rh * 0.5, z, bodyMat);
+      }
+      if (Math.random() < 0.2) {
+        addBox(g, 0.08, 0.6 + Math.random() * 1.2, 0.08, x + w * 0.5, h + 0.7, z, bodyMat);
+      }
+      const floors = Math.max(1, Math.floor(h / 0.95));
+      const cols = Math.max(1, Math.floor(w / 0.55));
       for (let f = 0; f < floors; f++) {
-        if (Math.random() < 0.45) {
-          const wx = x + 0.25 + Math.random() * Math.max(0.2, w - 0.5);
-          const wy = 0.4 + f * 1.05 + Math.random() * 0.2;
-          addBox(g, 0.18, 0.22, 0.12, wx, wy, d * 0.52, win);
+        for (let c = 0; c < cols; c++) {
+          if (Math.random() > dens) continue;
+          const tint = Math.random() < 0.2 ? winCool : Math.random() < 0.5 ? winWarm : winAmber;
+          const wx = x + 0.22 + c * (w / cols) + Math.random() * 0.08;
+          const wy = 0.35 + f * 0.95 + Math.random() * 0.08;
+          addBox(g, 0.16, 0.2, 0.1, wx, wy, z + d * 0.52, tint);
         }
       }
-      x += w + 0.35 + Math.random() * 0.8;
     }
+
+    // Back layer (farther, slightly smaller / darker)
+    let x = -28;
+    while (x < 28) {
+      const w = 1.0 + Math.random() * 2.8;
+      const h = 3.5 + Math.random() * 9;
+      const d = 0.9 + Math.random() * 1.2;
+      addBuilding(x, 4.5 + Math.random() * 2, w, h, d, bldgBack, 0.28);
+      x += w + 0.15 + Math.random() * 0.55;
+    }
+    // Mid layer
+    x = -26;
+    while (x < 26) {
+      const w = 1.1 + Math.random() * 2.4;
+      const h = 2.8 + Math.random() * 8;
+      const d = 1.0 + Math.random() * 1.5;
+      addBuilding(x, 1.5 + Math.random() * 1.5, w, h, d, bldgMid, 0.38);
+      x += w + 0.2 + Math.random() * 0.6;
+    }
+    // Front layer (closest to playfield)
+    x = -24;
+    while (x < 24) {
+      const w = 1.15 + Math.random() * 2.2;
+      const h = 2.2 + Math.random() * 7.5;
+      const d = 1.1 + Math.random() * 1.6;
+      addBuilding(x, Math.random() * 0.8, w, h, d, bldgFront, 0.5);
+      x += w + 0.18 + Math.random() * 0.5;
+    }
+
+    g.userData.winMats = winMats;
     return g;
   }
 
@@ -760,7 +763,7 @@
     starsGroup.visible = false;
 
     skylineGroup = buildSkyline();
-    skylineGroup.position.set(0, 0, 34);
+    skylineGroup.position.set(0, 0, 36);
     skylineGroup.visible = false;
     skyRoot.add(skylineGroup);
   }
@@ -806,7 +809,9 @@
       });
     }
     if (birdsGroup) birdsGroup.visible = p.birdsVisible > 0.05;
-    applyStreetLampGlow(p.lampGlow != null ? p.lampGlow : 0);
+    const lampG = p.lampGlow != null ? p.lampGlow : 0;
+    applyStreetLampGlow(lampG);
+    applyVehicleHeadlights(lampG);
     if (starsGroup) {
       starsGroup.visible = p.starsVisible > 0.05;
       starsGroup.traverse((ch) => {
@@ -816,13 +821,29 @@
       });
     }
     if (skylineGroup) {
-      skylineGroup.visible = p.skylineVisible > 0.05;
+      const sv = p.skylineVisible != null ? p.skylineVisible : 0;
+      skylineGroup.visible = sv > 0.05;
+      // Day/sunset: dark silhouette; night: windows follow lampGlow
+      const winGlow = lampG * Math.max(0, Math.min(1, sv));
+      const wins = skylineGroup.userData && skylineGroup.userData.winMats;
+      if (wins) {
+        for (const m of wins) {
+          m.emissiveIntensity = winGlow * 1.35;
+          if (winGlow < 0.08) {
+            m.color.set("#1a1e2a");
+          } else {
+            // restore warm/cool from emissive tint already on mat
+            m.color.copy(m.emissive);
+          }
+        }
+      }
+      // Soften overall building visibility in day by darkening slightly via scale not needed
       skylineGroup.traverse((ch) => {
         if (!ch.isMesh || !ch.material) return;
-        if (ch.material.emissiveIntensity != null && ch.material.emissive) {
-          // window cubes — keep glow; scale overall via parent opacity isn't available, leave
-        } else if (ch.material.color) {
-          // building body stays dark
+        if (ch.material.emissiveIntensity != null && wins && wins.indexOf(ch.material) >= 0) return;
+        // body mats stay dark; optional slight lighten at dusk for readability
+        if (ch.material.color && sv > 0.05 && sv < 0.9 && lampG < 0.4) {
+          // keep dark silhouette
         }
       });
     }
@@ -1128,14 +1149,22 @@
       wh.position.set(sx * bodyW * 0.32, 0.1, sz * 0.28);
       g.add(wh);
     });
-    const hl = new THREE.Mesh(
-      new THREE.BoxGeometry(0.06, 0.08, 0.14),
-      mat("#fff3a3")
-    );
-    hl.position.set(bodyW * 0.48, 0.28, 0);
-    g.add(hl);
+    const hlMats = [];
+    [[0.18], [-0.18]].forEach(([z]) => {
+      const hlMat = new THREE.MeshLambertMaterial({
+        color: new THREE.Color("#3a3a40"),
+        emissive: new THREE.Color("#fff6c8"),
+        emissiveIntensity: 0,
+        flatShading: true,
+      });
+      hlMats.push(hlMat);
+      const hl = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.12), hlMat);
+      hl.position.set(bodyW * 0.48, 0.28, z);
+      g.add(hl);
+    });
     g.userData.bodyW = bodyW;
     g.userData.kind = "car";
+    g.userData.headlights = hlMats;
     return g;
   }
 
@@ -1178,14 +1207,22 @@
         g.add(wh);
       });
     });
-    const hl = new THREE.Mesh(
-      new THREE.BoxGeometry(0.07, 0.1, 0.16),
-      mat("#fff3a3")
-    );
-    hl.position.set(bodyW * 0.48, 0.32, 0);
-    g.add(hl);
+    const hlMats = [];
+    [[0.2], [-0.2]].forEach(([z]) => {
+      const hlMat = new THREE.MeshLambertMaterial({
+        color: new THREE.Color("#3a3a40"),
+        emissive: new THREE.Color("#fff6c8"),
+        emissiveIntensity: 0,
+        flatShading: true,
+      });
+      hlMats.push(hlMat);
+      const hl = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.12), hlMat);
+      hl.position.set(bodyW * 0.48, 0.32, z);
+      g.add(hl);
+    });
     g.userData.bodyW = bodyW;
     g.userData.kind = "truck";
+    g.userData.headlights = hlMats;
     return g;
   }
 
@@ -1233,14 +1270,18 @@
     );
     helmet.position.set(rider.position.x, 0.74, 0);
     g.add(helmet);
-    const hl = new THREE.Mesh(
-      new THREE.BoxGeometry(0.05, 0.06, 0.08),
-      mat("#fff3a3")
-    );
+    const hlMat = new THREE.MeshLambertMaterial({
+      color: new THREE.Color("#3a3a40"),
+      emissive: new THREE.Color("#fff6c8"),
+      emissiveIntensity: 0,
+      flatShading: true,
+    });
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.08), hlMat);
     hl.position.set(bodyW * 0.38, 0.3, 0);
     g.add(hl);
     g.userData.bodyW = bodyW;
     g.userData.kind = "moto";
+    g.userData.headlights = [hlMat];
     return g;
   }
 
@@ -1286,422 +1327,6 @@
       color = COLORS.carPalette[Math.floor(Math.random() * COLORS.carPalette.length)];
     }
     return { kind: k, w, speedMul, hitH, color };
-  }
-
-  // ─── Straw-hat fisher NPC ─────────────────────────────────
-  function makeFisherMesh() {
-    const root = new THREE.Group();
-    const idle = new THREE.Group();
-    root.add(idle);
-    const skin = "#e8b896";
-    const shirt = "#4cc9f0";
-    const pants = "#4361ee";
-    const straw = "#e9c46a";
-    const strawDark = "#b08900";
-    const torso = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.26, 0.2),
-      mat(shirt, { flat: true })
-    );
-    torso.position.y = 0.28;
-    torso.castShadow = true;
-    idle.add(torso);
-    [-1, 1].forEach((side) => {
-      const leg = new THREE.Mesh(
-        new THREE.BoxGeometry(0.1, 0.14, 0.12),
-        mat(pants, { flat: true })
-      );
-      leg.position.set(side * 0.08, 0.12, 0);
-      idle.add(leg);
-      const shoe = new THREE.Mesh(
-        new THREE.BoxGeometry(0.12, 0.06, 0.16),
-        mat("#2b2d42", { flat: true })
-      );
-      shoe.position.set(side * 0.08, 0.04, 0.02);
-      idle.add(shoe);
-      const arm = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.18, 0.08),
-        mat(skin, { flat: true })
-      );
-      arm.position.set(side * 0.2, 0.28, 0);
-      idle.add(arm);
-    });
-    const head = new THREE.Mesh(
-      new THREE.BoxGeometry(0.36, 0.36, 0.36),
-      mat(skin, { flat: true })
-    );
-    head.position.y = 0.58;
-    head.castShadow = true;
-    idle.add(head);
-    // straw hat: brim + crown
-    const brim = new THREE.Mesh(
-      new THREE.BoxGeometry(0.62, 0.06, 0.62),
-      mat(straw, { flat: true })
-    );
-    brim.position.y = 0.78;
-    idle.add(brim);
-    const crown = new THREE.Mesh(
-      new THREE.BoxGeometry(0.34, 0.18, 0.34),
-      mat(strawDark, { flat: true })
-    );
-    crown.position.y = 0.9;
-    idle.add(crown);
-    // fishing rod
-    const rod = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.04, 0.9),
-      mat("#704522", { flat: true })
-    );
-    rod.position.set(0.28, 0.55, 0.35);
-    rod.rotation.x = -0.55;
-    idle.add(rod);
-    const line = new THREE.Mesh(
-      new THREE.BoxGeometry(0.02, 0.55, 0.02),
-      mat("#edf2f4", { flat: true })
-    );
-    line.position.set(0.28, 0.28, 0.78);
-    idle.add(line);
-    root.userData.idle = idle;
-    return root;
-  }
-
-  function hideSpeechBubble() {
-    if (!speechBubble) return;
-    speechBubble.classList.add("hidden");
-    speechBubble.setAttribute("aria-hidden", "true");
-  }
-
-  function clearFisher() {
-    hideSpeechBubble();
-    if (fisher) {
-      // Remove soft-block cell so old grass stays walkable after despawn
-      if (fisher.soft && rows[fisher.row]) {
-        const grow = rows[fisher.row];
-        if (!grow.blocks) grow.blocks = [];
-        const ix = grow.blocks.indexOf(fisher.col);
-        if (ix >= 0) grow.blocks.splice(ix, 1);
-      }
-      if (fisher.mesh) {
-        worldRoot.remove(fisher.mesh);
-        disposeObject(fisher.mesh);
-      }
-    }
-    fisher = null;
-    fisherSoftCol = null;
-  }
-
-  function pickFisherMidCol(row) {
-    // Prefer mid playable columns (near PLAYER_COL_START), avoid tree / soft-block cells
-    const midPrefs = [PLAYER_COL_START, PLAYER_COL_START - 1, PLAYER_COL_START + 1, PLAYER_COL_START - 2, PLAYER_COL_START + 2];
-    const candidates = [];
-    for (let c = 0; c < COLS; c++) {
-      if (row.trees && row.trees.includes(c)) continue;
-      if (row.blocks && row.blocks.includes(c)) continue;
-      candidates.push(c);
-    }
-    if (!candidates.length) return null;
-    for (const pref of midPrefs) {
-      if (candidates.includes(pref)) return pref;
-    }
-    // Fallback: closest to center
-    candidates.sort((a, b) => Math.abs(a - PLAYER_COL_START) - Math.abs(b - PLAYER_COL_START));
-    return candidates[0];
-  }
-
-  function spawnFisherAt(rowIdx, col) {
-    clearFisher();
-    const grow = rows[rowIdx];
-    if (!grow || grow.type !== "grass") return false;
-    if (col == null) col = pickFisherMidCol(grow);
-    if (col == null) return false;
-    if (!grow.blocks) grow.blocks = [];
-    if (!grow.blocks.includes(col)) grow.blocks.push(col);
-    const mesh = makeFisherMesh();
-    mesh.position.set(colToX(col), 0, rowToZ(rowIdx));
-    mesh.rotation.y = col < PLAYER_COL_START ? -0.25 : col > PLAYER_COL_START ? 0.25 : 0;
-    worldRoot.add(mesh);
-    fisher = {
-      row: rowIdx,
-      col,
-      mesh,
-      soft: true,
-      lineIdx: 0,
-      lineTimer: 0,
-      bob: 0,
-      shownOnce: false,
-      passed: false,
-    };
-    fisherSoftCol = col;
-    return true;
-  }
-
-  function placeFisher() {
-    // First appearance: early grass, nearer mid lateral space
-    clearFisher();
-    fisherNextScore = null;
-    let target = null;
-    for (let i = SAFE_START_ROWS; i < Math.min(rows.length, SAFE_START_ROWS + 10); i++) {
-      const row = rows[i];
-      if (!row || row.type !== "grass") continue;
-      const col = pickFisherMidCol(row);
-      if (col == null) continue;
-      // Avoid blocking the very first hop cell on start column
-      if (col === PLAYER_COL_START && i <= SAFE_START_ROWS + 1) {
-        const alt = pickFisherMidCol({
-          trees: row.trees || [],
-          blocks: (row.blocks || []).concat([PLAYER_COL_START]),
-          type: "grass",
-        });
-        if (alt == null) continue;
-        target = { row: i, col: alt };
-      } else {
-        target = { row: i, col };
-      }
-      break;
-    }
-    if (!target) return;
-    spawnFisherAt(target.row, target.col);
-  }
-
-  function scheduleNextFisher() {
-    const base = score || (player ? Math.max(0, player.maxRow - 1) : 0);
-    fisherNextScore = base + (40 + Math.floor(Math.random() * 21)); // 40..60
-  }
-
-  function trySpawnScheduledFisher() {
-    if (fisher || fisherNextScore == null) return;
-    if (score < fisherNextScore) return;
-    // Place on a grass row ahead of the player, near mid
-    const minRow = Math.max(SAFE_START_ROWS, (player ? player.row : 0) + 3);
-    const maxRow = Math.min(rows.length - 1, minRow + 14);
-    let placed = false;
-    for (let i = minRow; i <= maxRow; i++) {
-      const row = rows[i];
-      if (!row || row.type !== "grass") continue;
-      // Skip if an ad already soft-blocks the preferred mid cell heavily
-      if (spawnFisherAt(i, null)) {
-        placed = true;
-        fisherNextScore = null;
-        break;
-      }
-    }
-    if (!placed) {
-      // Push threshold a bit so we retry after more rows generate
-      fisherNextScore = score + 3;
-    }
-  }
-
-  function updateFisher(dt) {
-    // Respawn scheduling when no active fisher
-    if (!fisher || !fisher.mesh) {
-      hideSpeechBubble();
-      if (playing && !gameOver) trySpawnScheduledFisher();
-      return;
-    }
-    fisher.bob += dt;
-    const idle = fisher.mesh.userData.idle;
-    if (idle) {
-      idle.position.y = Math.sin(fisher.bob * 2.2) * 0.03;
-      idle.rotation.z = Math.sin(fisher.bob * 1.4) * 0.04;
-    }
-    fisher.mesh.position.set(colToX(fisher.col), 0, rowToZ(fisher.row));
-
-    if (!playing || gameOver || !player) {
-      hideSpeechBubble();
-      return;
-    }
-
-    const prow = playerVisualRow();
-    // After player hops past the fisher, despawn and schedule next (40–60 crosses)
-    if (!fisher.passed && prow > fisher.row + 1) {
-      fisher.passed = true;
-      scheduleNextFisher();
-      clearFisher();
-      return;
-    }
-
-    const near = Math.abs(prow - fisher.row) <= FISHER_NEAR_ROWS;
-    if (!near) {
-      hideSpeechBubble();
-      fisher.lineTimer = 0;
-      return;
-    }
-    if (!paused && canControl) {
-      fisher.lineTimer += dt;
-      if (!fisher.shownOnce || fisher.lineTimer >= FISHER_LINE_SEC) {
-        fisher.lineTimer = 0;
-        if (fisher.shownOnce) {
-          fisher.lineIdx = (fisher.lineIdx + 1) % FISHER_LINES.length;
-        } else {
-          fisher.lineIdx = 0; // lead with fishing line
-          fisher.shownOnce = true;
-        }
-        if (speechBubbleText) speechBubbleText.textContent = FISHER_LINES[fisher.lineIdx];
-      }
-    }
-    if (speechBubbleText && !speechBubbleText.textContent) {
-      speechBubbleText.textContent = FISHER_LINES[fisher.lineIdx];
-    }
-    _fisherProj.set(colToX(fisher.col), 1.55, rowToZ(fisher.row));
-    _fisherProj.project(camera);
-    if (_fisherProj.z > 1) {
-      hideSpeechBubble();
-      return;
-    }
-    const app = document.getElementById("app");
-    const rect = app ? app.getBoundingClientRect() : canvas.getBoundingClientRect();
-    const sx = (_fisherProj.x * 0.5 + 0.5) * rect.width;
-    const sy = (-_fisherProj.y * 0.5 + 0.5) * rect.height;
-    if (speechBubble) {
-      speechBubble.style.left = sx + "px";
-      speechBubble.style.top = Math.max(8, sy - 8) + "px";
-      speechBubble.classList.remove("hidden");
-      speechBubble.setAttribute("aria-hidden", "false");
-    }
-  }
-
-  // ─── Tomo Shop roadside ad signs (v1.14) ───────────────────
-  function makeAdSignMesh() {
-    const root = new THREE.Group();
-    const postMat = mat("#6d4c41", { flat: true });
-    const frameMat = mat("#f4a261", { flat: true });
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.35, 0.12), postMat);
-    post.position.y = 0.68;
-    post.castShadow = true;
-    root.add(post);
-    // Cross-arm
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 0.08), postMat);
-    arm.position.set(0, 1.32, 0);
-    root.add(arm);
-    // Billboard board (double-sided)
-    const faceMats = [];
-    function makeFaceMat() {
-      const m = new THREE.MeshLambertMaterial({
-        color: new THREE.Color("#ff9f1c"),
-        map: tomoShopTex || null,
-        emissive: new THREE.Color("#ffb703"),
-        emissiveIntensity: 0.22,
-        flatShading: true,
-        side: THREE.FrontSide,
-      });
-      faceMats.push(m);
-      return m;
-    }
-    const boardW = 1.05;
-    const boardH = 1.05;
-    const boardD = 0.08;
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(boardW + 0.1, boardH + 0.1, boardD), frameMat);
-    frame.position.set(0, 1.85, 0);
-    root.add(frame);
-    const front = new THREE.Mesh(new THREE.BoxGeometry(boardW, boardH, 0.02), makeFaceMat());
-    front.position.set(0, 1.85, boardD * 0.5 + 0.01);
-    root.add(front);
-    const back = new THREE.Mesh(new THREE.BoxGeometry(boardW, boardH, 0.02), makeFaceMat());
-    back.position.set(0, 1.85, -(boardD * 0.5 + 0.01));
-    back.rotation.y = Math.PI;
-    root.add(back);
-    // Little rooftop cap for Crossy vibe
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(boardW + 0.18, 0.08, 0.2), mat("#e76f51", { flat: true }));
-    cap.position.set(0, 1.85 + boardH * 0.5 + 0.06, 0);
-    root.add(cap);
-    root.userData.adFaceMats = faceMats;
-    return root;
-  }
-
-  function clearAdSigns() {
-    for (const ad of adSigns) {
-      if (ad.soft && rows[ad.row]) {
-        const grow = rows[ad.row];
-        if (!grow.blocks) grow.blocks = [];
-        const ix = grow.blocks.indexOf(ad.col);
-        if (ix >= 0) grow.blocks.splice(ix, 1);
-      }
-      if (ad.mesh) {
-        worldRoot.remove(ad.mesh);
-        disposeObject(ad.mesh);
-      }
-    }
-    adSigns = [];
-    adsEverPlaced = 0;
-  }
-
-  function pickAdSideCol(row) {
-    // Soft-block edge columns so the path center stays clear
-    const sides = [0, COLS - 1, 1, COLS - 2];
-    for (const c of sides) {
-      if (row.trees && row.trees.includes(c)) continue;
-      if (row.blocks && row.blocks.includes(c)) continue;
-      if (fisher && fisher.row === row.index && fisher.col === c) continue;
-      return c;
-    }
-    return null;
-  }
-
-  function placeAdOnRow(rowIdx) {
-    const row = rows[rowIdx];
-    if (!row || row.type !== "grass") return false;
-    if (adSigns.some((a) => a.row === rowIdx)) return false;
-    const col = pickAdSideCol(row);
-    if (col == null) return false;
-    if (!row.blocks) row.blocks = [];
-    if (!row.blocks.includes(col)) row.blocks.push(col);
-    const mesh = makeAdSignMesh();
-    mesh.position.set(colToX(col), 0, rowToZ(rowIdx));
-    // Angle slightly toward path center so the logo faces the hop lane
-    mesh.rotation.y = col < PLAYER_COL_START ? 0.35 : -0.35;
-    worldRoot.add(mesh);
-    adSigns.push({ row: rowIdx, col, mesh, soft: true });
-    adsEverPlaced += 1;
-    return true;
-  }
-
-  function resetAdSchedule() {
-    clearAdSigns();
-    nextAdScore = 35 + Math.floor(Math.random() * 11); // 35..45 once per run
-  }
-
-  function trySpawnAds() {
-    if (!playing || gameOver) return;
-    if (nextAdScore >= 99999) return;
-    if (score < nextAdScore) return;
-    // Find a grass row near the threshold / ahead of player
-    const target = Math.max(nextAdScore + 1, (player ? player.row : 0) + 2);
-    const lo = Math.max(SAFE_START_ROWS, target - 2);
-    const hi = Math.min(rows.length - 1, target + 10);
-    let placed = false;
-    for (let i = lo; i <= hi; i++) {
-      if (placeAdOnRow(i)) {
-        placed = true;
-        break;
-      }
-    }
-    // Schedule next ad further ahead (every ~25–40 score)
-    nextAdScore = score + (25 + Math.floor(Math.random() * 16));
-    if (!placed) {
-      // Retry soon if no grass was available
-      nextAdScore = Math.min(nextAdScore, score + 5);
-    }
-  }
-
-  function updateAdSigns() {
-    const minKeep = player ? Math.max(0, player.row - 8) : 0;
-    for (let i = adSigns.length - 1; i >= 0; i--) {
-      const ad = adSigns[i];
-      if (!ad.mesh) {
-        adSigns.splice(i, 1);
-        continue;
-      }
-      // Despawn ads far behind the player to avoid mesh leaks on long runs
-      if (player && ad.row < minKeep) {
-        if (ad.soft && rows[ad.row] && rows[ad.row].blocks) {
-          const ix = rows[ad.row].blocks.indexOf(ad.col);
-          if (ix >= 0) rows[ad.row].blocks.splice(ix, 1);
-        }
-        worldRoot.remove(ad.mesh);
-        disposeObject(ad.mesh);
-        adSigns.splice(i, 1);
-        continue;
-      }
-      ad.mesh.position.set(colToX(ad.col), 0, rowToZ(ad.row));
-    }
   }
 
   // ─── Street light-posts (v1.14) ────────────────────────────
@@ -1823,7 +1448,99 @@
   }
 
   function updateStreetLampLights() {
-    if (lastLampGlow > 0.05) applyStreetLampGlow(lastLampGlow);
+    if (lastLampGlow > 0.05) {
+      applyStreetLampGlow(lastLampGlow);
+      applyVehicleHeadlights(lastLampGlow);
+    } else {
+      applyVehicleHeadlights(0);
+    }
+  }
+
+  // Optional pooled SpotLights for nearest vehicles (cheap night pools)
+  const vehicleHeadSpotPool = [];
+  const VEHICLE_SPOT_POOL = 3;
+  function ensureVehicleHeadSpots() {
+    if (vehicleHeadSpotPool.length) return;
+    for (let i = 0; i < VEHICLE_SPOT_POOL; i++) {
+      const sl = new THREE.SpotLight(0xfff6c8, 0, 7, 0.45, 0.45, 1.4);
+      sl.visible = false;
+      sl.castShadow = false;
+      scene.add(sl);
+      scene.add(sl.target);
+      vehicleHeadSpotPool.push(sl);
+    }
+  }
+
+  function applyVehicleHeadlights(glow) {
+    const g = Math.max(0, Math.min(1, glow || 0));
+    // Emissive intensity: day 0, sunset warm low, night bright
+    const intensity = g < 0.05 ? 0 : (g < 0.5 ? g * 0.85 : 0.55 + g * 0.95);
+    rowMeshes.forEach((entry) => {
+      if (!entry || entry.type !== "road" || !entry.cars) return;
+      for (const mesh of entry.cars) {
+        if (!mesh || !mesh.visible || !mesh.userData || !mesh.userData.headlights) continue;
+        for (const m of mesh.userData.headlights) {
+          m.emissiveIntensity = intensity;
+          if (intensity > 0.05) {
+            m.color.set("#fff6c8");
+            m.emissive.set("#fff6c8");
+          } else {
+            m.color.set("#3a3a40");
+            m.emissive.set("#000000");
+          }
+        }
+      }
+    });
+    // Small SpotLight pools only near the player when night is bright enough
+    ensureVehicleHeadSpots();
+    if (!player || g < 0.35) {
+      for (const sl of vehicleHeadSpotPool) {
+        sl.intensity = 0;
+        sl.visible = false;
+      }
+      return;
+    }
+    const pz = rowToZ(playerVisualRow());
+    const px = playerMesh ? playerMesh.position.x : colToX(player.col);
+    const candidates = [];
+    rowMeshes.forEach((entry, rowIdx) => {
+      if (!entry || entry.type !== "road" || !entry.cars) return;
+      const rz = rowToZ(rowIdx);
+      if (Math.abs(rz - pz) > 6) return;
+      for (const mesh of entry.cars) {
+        if (!mesh || !mesh.visible) continue;
+        const wx = mesh.parent ? mesh.parent.position.x + mesh.position.x : mesh.position.x;
+        // mesh is child of row group at z=row; world x = mesh.position.x
+        const dx = mesh.position.x - px;
+        const dz = rz - pz;
+        const d2 = dx * dx + dz * dz;
+        candidates.push({ mesh, d2, rz });
+      }
+    });
+    candidates.sort((a, b) => a.d2 - b.d2);
+    for (let i = 0; i < vehicleHeadSpotPool.length; i++) {
+      const sl = vehicleHeadSpotPool[i];
+      const hit = candidates[i];
+      if (!hit) {
+        sl.intensity = 0;
+        sl.visible = false;
+        continue;
+      }
+      const mesh = hit.mesh;
+      // Headlights face local +X; world forward depends on mesh.rotation.y
+      const yaw = mesh.rotation.y || 0;
+      const fx = Math.cos(yaw); // +X local → world
+      const fz = -Math.sin(yaw);
+      const hx = mesh.position.x;
+      const hy = 0.35;
+      const hz = hit.rz;
+      sl.visible = true;
+      sl.intensity = 0.25 + g * 0.55;
+      sl.distance = 5 + g * 2;
+      sl.position.set(hx + fx * 0.35, hy, hz + fz * 0.35);
+      sl.target.position.set(hx + fx * 3.5, 0.1, hz + fz * 3.5);
+      sl.target.updateMatrixWorld();
+    }
   }
 
   function shadeHex(hex, amt) {
@@ -1845,7 +1562,7 @@
     const root = new THREE.Group();
     const idle = new THREE.Group();
     root.add(idle);
-    // mini chibi: small body, big head, blue cap
+    // mini chibi with animatable limb groups (v1.17)
     const torso = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.26, 0.2),
       playerMat(ch.shirt || ch.body, { flat: true })
@@ -1859,88 +1576,107 @@
     );
     belly.position.set(0, 0.26, 0.12);
     idle.add(belly);
-    [-1, 1].forEach((side) => {
+
+    const legL = new THREE.Group();
+    const legR = new THREE.Group();
+    [[-1, legL], [1, legR]].forEach(([side, grp]) => {
+      grp.position.set(side * 0.08, 0.18, 0);
       const leg = new THREE.Mesh(
         new THREE.BoxGeometry(0.1, 0.14, 0.12),
         playerMat(ch.pants || ch.accent, { flat: true })
       );
-      leg.position.set(side * 0.08, 0.12, 0);
+      leg.position.set(0, -0.06, 0);
       leg.castShadow = true;
-      idle.add(leg);
+      grp.add(leg);
       const shoe = new THREE.Mesh(
         new THREE.BoxGeometry(0.12, 0.06, 0.16),
         playerMat(ch.shoes || "#2b2d42", { flat: true })
       );
-      shoe.position.set(side * 0.08, 0.04, 0.02);
-      idle.add(shoe);
+      shoe.position.set(0, -0.14, 0.02);
+      grp.add(shoe);
+      idle.add(grp);
     });
-    [-1, 1].forEach((side) => {
+
+    const armL = new THREE.Group();
+    const armR = new THREE.Group();
+    [[-1, armL], [1, armR]].forEach(([side, grp]) => {
+      grp.position.set(side * 0.2, 0.36, 0);
       const arm = new THREE.Mesh(
         new THREE.BoxGeometry(0.08, 0.18, 0.08),
         playerMat(ch.body, { flat: true })
       );
-      arm.position.set(side * 0.2, 0.28, 0);
+      arm.position.set(0, -0.08, 0);
       arm.castShadow = true;
-      idle.add(arm);
+      grp.add(arm);
+      idle.add(grp);
     });
+
+    const headG = new THREE.Group();
+    headG.position.y = 0.58;
+    idle.add(headG);
     const head = new THREE.Mesh(
       new THREE.SphereGeometry(0.26, 10, 8),
       playerMat(ch.body, { flat: true })
     );
-    head.position.y = 0.58;
     head.castShadow = true;
-    idle.add(head);
+    headG.add(head);
     const fringe = new THREE.Mesh(
       new THREE.SphereGeometry(0.2, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.4),
       playerMat(ch.hair, { flat: true })
     );
-    fringe.position.set(0, 0.62, 0.02);
-    idle.add(fringe);
+    fringe.position.set(0, 0.04, 0.02);
+    headG.add(fringe);
     const cap = new THREE.Mesh(
       new THREE.SphereGeometry(0.24, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.52),
       playerMat(ch.cap || ch.accent, { flat: true })
     );
-    cap.position.y = 0.7;
+    cap.position.y = 0.12;
     cap.castShadow = true;
-    idle.add(cap);
+    headG.add(cap);
     const bill = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.04, 0.18),
       playerMat(ch.capBill || ch.detail, { flat: true })
     );
-    bill.position.set(0, 0.66, 0.22);
+    bill.position.set(0, 0.08, 0.22);
     bill.castShadow = true;
-    idle.add(bill);
+    headG.add(bill);
     const button = new THREE.Mesh(
       new THREE.SphereGeometry(0.04, 6, 5),
       playerMat("#edf2f4", { flat: true })
     );
-    button.position.set(0, 0.9, 0);
-    idle.add(button);
+    button.position.set(0, 0.32, 0);
+    headG.add(button);
     const eyes = [];
     [-1, 1].forEach((side) => {
       const eye = new THREE.Mesh(
         new THREE.SphereGeometry(0.07, 6, 5),
         playerMat(ch.eye)
       );
-      eye.position.set(side * 0.1, 0.58, 0.2);
-      idle.add(eye);
+      eye.position.set(side * 0.1, 0, 0.2);
+      headG.add(eye);
       const pupil = new THREE.Mesh(
         new THREE.SphereGeometry(0.035, 5, 4),
         playerMat(ch.pupil)
       );
-      pupil.position.set(side * 0.1, 0.58, 0.26);
-      idle.add(pupil);
+      pupil.position.set(side * 0.1, 0, 0.26);
+      headG.add(pupil);
       eyes.push(eye);
     });
     const smile = new THREE.Mesh(
       new THREE.BoxGeometry(0.1, 0.02, 0.02),
       playerMat("#e76f51", { flat: true })
     );
-    smile.position.set(0, 0.48, 0.24);
-    idle.add(smile);
+    smile.position.set(0, -0.1, 0.24);
+    headG.add(smile);
+
     root.userData.charId = ch.id;
     root.userData.idle = idle;
     root.userData.eyes = eyes;
+    root.userData.armL = armL;
+    root.userData.armR = armR;
+    root.userData.legL = legL;
+    root.userData.legR = legR;
+    root.userData.headG = headG;
     return root;
   }
 
@@ -2011,8 +1747,6 @@
       disposeObject(entry.group);
     });
     rowMeshes.clear();
-    clearFisher();
-    clearAdSigns();
     clearStreetLamps();
     if (playerMesh) {
       worldRoot.remove(playerMesh);
@@ -2112,8 +1846,9 @@
         const post = makeLightPostMesh();
         const sideX = side * shoulder;
         post.position.set(sideX, 0, 0);
-        // Mirror arm toward the road
-        post.scale.x = side < 0 ? -1 : 1;
+        // Arm is built toward local +X; flip so arms point INWARD toward road (X=0)
+        // Left shoulder (sideX < 0): keep +X; right shoulder: mirror to −X
+        post.scale.x = side < 0 ? 1 : -1;
         group.add(post);
         registerStreetLamp(post, row.index, sideX);
       });
@@ -2152,21 +1887,42 @@
   function applyIdlePose(dt) {
     if (!playerIdleRoot) return;
     idleTime += dt;
+    const ud = playerMesh ? playerMesh.userData : {};
+    const armL = ud.armL, armR = ud.armR, legL = ud.legL, legR = ud.legR;
     const hopping = player && player.hopT < 1;
     if (hopping) {
-      playerIdleRoot.position.y = 0;
-      playerIdleRoot.rotation.z = 0;
-      playerIdleRoot.scale.set(1, 1, 1);
-      eyeMeshes.forEach((e) => { e.scale.set(1, 1, 1); });
+      // Squash / stretch / tuck driven from hopT in updatePlayerVisual
       return;
     }
-    // Gentle bob + breathe + tiny sway (menu + idle gameplay)
-    const bob = Math.sin(idleTime * 2.2) * 0.035;
-    const breathe = 1 + Math.sin(idleTime * 1.6) * 0.025;
-    const sway = Math.sin(idleTime * 1.1) * 0.04;
+    // Richer idle: breathe, weight shift, arm sway, blink (v1.17)
+    const bob = Math.sin(idleTime * 2.4) * 0.042;
+    const breathePhase = Math.sin(idleTime * 1.55);
+    const breathe = 1 + breathePhase * 0.032;
+    const weight = Math.sin(idleTime * 0.85) * 0.055;
+    const sway = Math.sin(idleTime * 1.05) * 0.035;
     playerIdleRoot.position.y = bob;
-    playerIdleRoot.rotation.z = sway;
-    playerIdleRoot.scale.set(breathe, 1 + (breathe - 1) * 0.6, breathe);
+    playerIdleRoot.position.x = weight * 0.08;
+    playerIdleRoot.rotation.z = sway + weight * 0.35;
+    playerIdleRoot.rotation.x = breathePhase * 0.02;
+    // Scale: taller inhale, slight squash on exhale
+    playerIdleRoot.scale.set(
+      1 + (breathe - 1) * 0.55 - Math.abs(weight) * 0.08,
+      breathe,
+      1 + (breathe - 1) * 0.45
+    );
+    if (armL && armR) {
+      const armSwing = Math.sin(idleTime * 1.35) * 0.18;
+      armL.rotation.x = armSwing;
+      armR.rotation.x = -armSwing * 0.85;
+      armL.rotation.z = 0.12 + Math.sin(idleTime * 0.9) * 0.06;
+      armR.rotation.z = -0.12 - Math.sin(idleTime * 0.9 + 0.4) * 0.06;
+    }
+    if (legL && legR) {
+      legL.rotation.x = weight * 0.25;
+      legR.rotation.x = -weight * 0.25;
+      legL.position.y = 0.18 - Math.max(0, weight) * 0.02;
+      legR.position.y = 0.18 - Math.max(0, -weight) * 0.02;
+    }
     // Occasional blink
     const blinkCycle = idleTime % 3.2;
     const blink = blinkCycle > 3.0 && blinkCycle < 3.12 ? 0.12 : 1;
@@ -2180,9 +1936,7 @@
     const col = player.fromCol + (player.toCol - player.fromCol) * et;
     const row = player.fromRow + (player.toRow - player.fromRow) * et;
     const hopY = Math.sin(t * Math.PI) * 0.55;
-    const bounce = 1 + Math.sin(t * Math.PI) * 0.12;
     playerMesh.position.set(colToX(col), hopY, rowToZ(row));
-    playerMesh.scale.set(bounce, bounce, bounce);
     let yaw = 0;
     if (player.toRow !== player.fromRow) {
       yaw = player.toRow > player.fromRow ? 0 : Math.PI;
@@ -2193,6 +1947,51 @@
       yaw = Math.PI;
     }
     playerMesh.rotation.y = yaw;
+
+    const ud = playerMesh.userData;
+    const idle = playerIdleRoot;
+    if (t < 1 && idle) {
+      // Squash on takeoff → stretch in air → squash on land
+      let sx = 1, sy = 1, sz = 1;
+      if (t < 0.18) {
+        const k = t / 0.18;
+        sx = 1.18 - k * 0.1;
+        sy = 0.78 + k * 0.22;
+        sz = sx;
+      } else if (t < 0.72) {
+        const k = (t - 0.18) / 0.54;
+        const stretch = Math.sin(k * Math.PI);
+        sx = 0.88 - stretch * 0.06;
+        sy = 1.12 + stretch * 0.18;
+        sz = sx;
+      } else {
+        const k = (t - 0.72) / 0.28;
+        sx = 1.0 + Math.sin(k * Math.PI) * 0.16;
+        sy = 1.0 - Math.sin(k * Math.PI) * 0.18;
+        sz = sx;
+      }
+      idle.scale.set(sx, sy, sz);
+      idle.position.y = 0;
+      idle.position.x = 0;
+      idle.rotation.z = 0;
+      idle.rotation.x = -Math.sin(t * Math.PI) * 0.12;
+      // Tuck knees / swing arms
+      if (ud.legL && ud.legR) {
+        const tuck = Math.sin(t * Math.PI) * 0.55;
+        ud.legL.rotation.x = -tuck;
+        ud.legR.rotation.x = -tuck * 0.9;
+      }
+      if (ud.armL && ud.armR) {
+        const lift = Math.sin(t * Math.PI) * 0.7;
+        ud.armL.rotation.x = -lift;
+        ud.armR.rotation.x = -lift * 0.95;
+        ud.armL.rotation.z = 0.25;
+        ud.armR.rotation.z = -0.25;
+      }
+      playerMesh.scale.set(1, 1, 1);
+    } else {
+      playerMesh.scale.set(1, 1, 1);
+    }
   }
 
   function updateCamera(dt) {
@@ -2241,7 +2040,7 @@
     pruneFarRows(lo - 2, hi + 2);
   }
 
-  // ─── Audio (SFX and BGM are synthesized with Web Audio) ──
+  // ─── Audio (SFX + chiptune BGM via Web Audio; Custom Track = MP3) ──
   const AudioFX = (() => {
     let ctx = null;
     let master = null;
@@ -2263,16 +2062,72 @@
     // Inspiration only: NES / Dn-FamiTracker VRC6+MMC5 palette (pulse, triangle,
     // noise, saw-like lead). Original compositions — not copies of any specific piece.
 
-    const TRACK_IDS = ["eurobeat", "skyspire", "dungeongate", "cloudthrone", "ivorykeep"];
+    const TRACK_IDS = ["eurobeat", "skyspire", "dungeongate", "cloudthrone", "ivorykeep", "custom"];
     const TRACK_LABELS = {
       eurobeat: "Eurobeat",
       skyspire: "Sky Spire",
       dungeongate: "Dungeon Gate",
       cloudthrone: "Cloud Throne",
       ivorykeep: "Ivory Keep",
+      custom: "Custom Track",
     };
+    const CUSTOM_BGM_SRC = "assets/bgm-custom.mp3";
 
     let currentTrackId = TRACK_IDS.includes(bgmTrack) ? bgmTrack : "eurobeat";
+    let customAudio = null; // HTMLAudioElement for Custom Track MP3
+    let customPausedAt = 0;
+
+    function isCustomTrack() {
+      return currentTrackId === "custom";
+    }
+
+    function ensureCustomAudio() {
+      if (customAudio) return customAudio;
+      try {
+        customAudio = new Audio(CUSTOM_BGM_SRC);
+        customAudio.loop = true;
+        customAudio.preload = "auto";
+        customAudio.volume = Math.max(0, Math.min(1, BGM_VOLUME * musicVol * (muted ? 0 : 1)));
+      } catch (_) {
+        customAudio = null;
+      }
+      return customAudio;
+    }
+
+    function syncCustomVolume() {
+      if (!customAudio) return;
+      // Mute is also on master for synth; for HTMLAudio apply mute + musicVol directly
+      customAudio.volume = muted ? 0 : Math.max(0, Math.min(1, BGM_VOLUME * musicVol));
+    }
+
+    function stopCustomAudio(hard) {
+      if (!customAudio) return;
+      try {
+        customAudio.pause();
+        if (hard) {
+          customAudio.currentTime = 0;
+          customPausedAt = 0;
+        } else {
+          customPausedAt = customAudio.currentTime || 0;
+        }
+      } catch (_) {}
+    }
+
+    function playCustomAudio(fromPause) {
+      const a = ensureCustomAudio();
+      if (!a || muted) return;
+      syncCustomVolume();
+      try {
+        if (!fromPause) {
+          a.currentTime = 0;
+          customPausedAt = 0;
+        } else if (customPausedAt > 0) {
+          a.currentTime = customPausedAt;
+        }
+        const p = a.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      } catch (_) {}
+    }
 
     // ── Song: Eurobeat (v1.06, ~60s @ 168 BPM) ───────────────
     const EURO_PROG_A = [45, 41, 36, 43];
@@ -2686,6 +2541,15 @@
         loopBars: 38,
         schedule: scheduleIvoryKeep,
       },
+      custom: {
+        id: "custom",
+        label: TRACK_LABELS.custom,
+        bpm: 120,
+        stepsPerBar: 16,
+        loopBars: 41, // ~82s @ 120 BPM meta only; actual is HTMLAudio loop
+        schedule: null, // MP3 path — do not run chiptune scheduler
+        mp3: true,
+      },
     };
 
     function getSong() {
@@ -2741,6 +2605,7 @@
         master.gain.cancelScheduledValues(now);
         master.gain.setValueAtTime(muted ? 0 : 1, now);
       }
+      syncCustomVolume();
     }
 
     function applyMusicGain() {
@@ -2848,6 +2713,7 @@
     function scheduleMusic() {
       if (!musicPlaying || !ctx || muted) return;
       const song = getSong();
+      if (!song || !song.schedule || song.mp3) return; // Custom Track uses HTMLAudio
       const meta = songMeta(song);
       const STEP = meta.step;
       const LOOP_STEPS = meta.loopSteps;
@@ -2917,9 +2783,21 @@
     /** Brief BGM duck (non-fatal hit). Does not stop music. */
     function duckMusic(sec) {
       if (!audioStarted || muted || !musicPlaying || musicPaused) return;
+      const dur = Math.max(0.2, Math.min(2.5, sec == null ? 0.45 : sec));
+      if (isCustomTrack() && customAudio) {
+        const base = Math.max(0, Math.min(1, BGM_VOLUME * musicVol));
+        try {
+          customAudio.volume = base * 0.18;
+          window.setTimeout(() => {
+            if (customAudio && isCustomTrack() && musicPlaying && !muted) {
+              customAudio.volume = base;
+            }
+          }, Math.floor(dur * 1000));
+        } catch (_) {}
+        return;
+      }
       const c = ensureCtx();
       if (!c || !musicGain) return;
-      const dur = Math.max(0.2, Math.min(2.5, sec == null ? 0.45 : sec));
       const now = c.currentTime;
       const base = BGM_VOLUME * musicVol;
       musicGain.gain.cancelScheduledValues(now);
@@ -2956,28 +2834,44 @@
 
     function startMusic() {
       if (!audioStarted || muted) return;
+      if (musicPlaying) return;
       const c = ensureCtx();
-      if (!c || musicPlaying) return;
+      if (!c && !isCustomTrack()) return;
       resume();
       musicPaused = false;
-      if (musicGain) {
+      musicPlaying = true;
+      musicStep = 0;
+      if (isCustomTrack()) {
+        // Stop any leftover synth voices; drive HTMLAudio MP3
+        if (musicTimer) { window.clearTimeout(musicTimer); musicTimer = 0; }
+        killMusicSources();
+        if (musicGain && c) {
+          musicGain.gain.cancelScheduledValues(c.currentTime);
+          musicGain.gain.setValueAtTime(0, c.currentTime);
+        }
+        playCustomAudio(false);
+        return;
+      }
+      stopCustomAudio(true);
+      if (musicGain && c) {
         musicGain.gain.cancelScheduledValues(c.currentTime);
         musicGain.gain.setValueAtTime(BGM_VOLUME * musicVol, c.currentTime);
       }
-      musicPlaying = true;
-      musicStep = 0;
       musicNextTime = c.currentTime + 0.04;
       scheduleMusic();
     }
 
     function pauseMusic() {
-      // Soft pause — keep musicStep so resume continues mid-song
+      // Soft pause — keep musicStep / customPausedAt so resume continues mid-song
       if (!musicPlaying && musicPaused) return;
       musicPlaying = false;
       musicPaused = true;
       if (musicTimer) {
         window.clearTimeout(musicTimer);
         musicTimer = 0;
+      }
+      if (isCustomTrack() || (customAudio && !customAudio.paused)) {
+        stopCustomAudio(false);
       }
       if (musicGain && ctx) {
         const now = ctx.currentTime;
@@ -2991,14 +2885,23 @@
       if (!audioStarted || muted) return;
       if (musicPlaying) return;
       const c = ensureCtx();
-      if (!c) return;
+      if (!c && !isCustomTrack()) return;
       resume();
       musicPaused = false;
-      if (musicGain) {
+      musicPlaying = true;
+      if (isCustomTrack()) {
+        if (musicGain && c) {
+          musicGain.gain.cancelScheduledValues(c.currentTime);
+          musicGain.gain.setValueAtTime(0, c.currentTime);
+        }
+        playCustomAudio(true);
+        return;
+      }
+      stopCustomAudio(true);
+      if (musicGain && c) {
         musicGain.gain.cancelScheduledValues(c.currentTime);
         musicGain.gain.setValueAtTime(BGM_VOLUME * musicVol, c.currentTime);
       }
-      musicPlaying = true;
       musicNextTime = c.currentTime + 0.04;
       scheduleMusic();
     }
@@ -3012,6 +2915,7 @@
         window.clearTimeout(musicTimer);
         musicTimer = 0;
       }
+      stopCustomAudio(true);
       if (musicGain && ctx) {
         const now = ctx.currentTime;
         musicGain.gain.cancelScheduledValues(now);
@@ -3053,7 +2957,8 @@
         localStorage.setItem(VOLUME_KEY, String(Math.round(pct)));
       } catch (_) {}
       ensureCtx();
-      if (musicPlaying && musicGain && ctx) {
+      syncCustomVolume();
+      if (musicPlaying && !isCustomTrack() && musicGain && ctx) {
         const now = ctx.currentTime;
         musicGain.gain.cancelScheduledValues(now);
         musicGain.gain.setValueAtTime(BGM_VOLUME * musicVol, now);
@@ -3122,11 +3027,12 @@
     }
 
     function listTracks() {
-      return TRACK_IDS.map((id) => ({
-        id,
-        label: TRACK_LABELS[id],
-        loopSeconds: songMeta(SONGS[id]).loopSeconds,
-      }));
+      return TRACK_IDS.map((id) => {
+        const song = SONGS[id];
+        let loopSeconds = songMeta(song).loopSeconds;
+        if (song && song.mp3) loopSeconds = 82; // assets/bgm-custom.mp3 ≈ 82s
+        return { id, label: TRACK_LABELS[id], loopSeconds };
+      });
     }
 
     syncMuteUi();
@@ -3221,13 +3127,14 @@
       pctx.beginPath();
       pctx.arc(s / 2, s / 2, s * 0.46, 0, Math.PI * 2);
       pctx.fill();
-      const bob = Math.sin(t * 2.2) * s * 0.018;
-      const breathe = 1 + Math.sin(t * 1.6) * 0.03;
-      const sway = Math.sin(t * 1.1) * 0.05;
+      const bob = Math.sin(t * 2.4) * s * 0.022;
+      const breathe = 1 + Math.sin(t * 1.55) * 0.038;
+      const sway = Math.sin(t * 1.05) * 0.055;
+      const weight = Math.sin(t * 0.85) * 0.03;
       pctx.save();
-      pctx.translate(s / 2, s / 2 + s * 0.04 + bob);
-      pctx.rotate(sway);
-      pctx.scale(breathe, breathe);
+      pctx.translate(s / 2 + weight * s * 0.04, s / 2 + s * 0.04 + bob);
+      pctx.rotate(sway + weight * 0.4);
+      pctx.scale(breathe * 0.98, breathe);
       const blinkCycle = t % 3.2;
       const eyeScaleY = blinkCycle > 3.0 && blinkCycle < 3.12 ? 0.15 : 1;
       drawCharacterAt(pctx, 0, 0, s * 0.34, ch, 1, eyeScaleY);
@@ -3447,7 +3354,6 @@
       }
       rows.push(row);
     }
-    trySpawnAds();
   }
 
   // ─── Player / game flow ───────────────────────────────────
@@ -3509,8 +3415,6 @@
     ensurePlayerMesh();
     ensureLampPointLights();
     syncVisibleWorld();
-    placeFisher();
-    resetAdSchedule();
     updatePlayerVisual();
     updateCamera(1);
     snapSkyPhase(0);
@@ -3564,8 +3468,6 @@
       scoreEl.textContent = String(score);
       AudioFX.scoreTick(score);
       checkComboMilestones();
-      trySpawnAds();
-      trySpawnScheduledFisher();
     }
     ensureRowsAhead();
     if (hopQueue.length) {
@@ -3974,7 +3876,6 @@
     skyClockRunning = false;
     runTimerFrozen = true;
     hideCountdown();
-    hideSpeechBubble();
     syncPauseBtn();
     // Hard-cut BGM immediately; hit SFX still plays
     AudioFX.stopMusic();
@@ -4053,7 +3954,6 @@
     skyClockRunning = false;
     runTimerFrozen = true;
     hideCountdown();
-    hideSpeechBubble();
     showRunTimer(false);
     optionsReturnMode = "menu";
     AudioFX.stopMusic();
@@ -4251,8 +4151,6 @@
     updatePlayerVisual();
     applyIdlePose(dt || 0.016);
     updateCamera(dt || 0.016);
-    updateFisher(dt || 0.016);
-    updateAdSigns();
     updateStreetLampLights();
     renderer.render(scene, camera);
   }
@@ -4261,12 +4159,16 @@
   function loop(ts) {
     const dt = Math.min(0.05, (ts - lastTs) / 1000) || 0.016;
     lastTs = ts;
-    if (paused) {
-      update(0);
-      renderFrame(0);
-    } else {
-      update(dt);
-      renderFrame(dt);
+    try {
+      if (paused) {
+        update(0);
+        renderFrame(0);
+      } else {
+        update(dt);
+        renderFrame(dt);
+      }
+    } catch (err) {
+      console.error("Tomo Crossroad frame error:", err);
     }
     animId = requestAnimationFrame(loop);
   }
@@ -4296,8 +4198,6 @@
     ensurePlayerMesh();
     ensureLampPointLights();
     syncVisibleWorld();
-    placeFisher();
-    resetAdSchedule();
     updatePlayerVisual();
     updateCamera(1);
     lastTs = performance.now();
