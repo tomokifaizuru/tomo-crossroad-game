@@ -49,18 +49,18 @@
     capkid: {
       id: "capkid",
       label: "Blue",
-      body: "#ffb4a2",
-      accent: "#3a86ff",
-      belly: "#ffe5d9",
-      hair: "#5c4033",
+      body: "#ffdbac",
+      accent: "#2e86ff",
+      belly: "#7ad7ff",
+      hair: "#5d3a1a",
       eye: "#ffffff",
-      pupil: "#2b2d42",
-      detail: "#3a86ff",
-      shirt: "#4cc9f0",
-      pants: "#4361ee",
-      shoes: "#2b2d42",
-      cap: "#3a86ff",
-      capBill: "#2657c9",
+      pupil: "#1a1a1a",
+      detail: "#1e6fe0",
+      shirt: "#33ccff",
+      pants: "#1a237e",
+      shoes: "#333333",
+      cap: "#2e86ff",
+      capBill: "#1e6fe0",
     },
     red: {
       id: "red",
@@ -1563,37 +1563,41 @@
     const root = new THREE.Group();
     const idle = new THREE.Group();
     root.add(idle);
-    // mini chibi with animatable limb groups (v1.17)
+    // Draft A / Sunset-hop: blocky Crossy-Road chibi (v1.23)
+    // Big rectangular head, flat cap + white button, cyan sleeves, dark pants.
+
     const torso = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.26, 0.2),
+      new THREE.BoxGeometry(0.34, 0.28, 0.22),
       playerMat(ch.shirt || ch.body, { flat: true })
     );
-    torso.position.y = 0.28;
+    torso.position.y = 0.30;
     torso.castShadow = true;
     idle.add(torso);
+    // subtle lighter shirt panel (not a round belly)
     const belly = new THREE.Mesh(
-      new THREE.BoxGeometry(0.22, 0.12, 0.06),
-      playerMat(ch.belly, { flat: true })
+      new THREE.BoxGeometry(0.22, 0.14, 0.04),
+      playerMat(ch.belly || ch.shirt || ch.body, { flat: true })
     );
-    belly.position.set(0, 0.26, 0.12);
+    belly.position.set(0, 0.28, 0.125);
     idle.add(belly);
 
     const legL = new THREE.Group();
     const legR = new THREE.Group();
     [[-1, legL], [1, legR]].forEach(([side, grp]) => {
-      grp.position.set(side * 0.08, 0.18, 0);
+      grp.position.set(side * 0.09, 0.18, 0);
       const leg = new THREE.Mesh(
-        new THREE.BoxGeometry(0.1, 0.14, 0.12),
+        new THREE.BoxGeometry(0.12, 0.16, 0.14),
         playerMat(ch.pants || ch.accent, { flat: true })
       );
-      leg.position.set(0, -0.06, 0);
+      leg.position.set(0, -0.07, 0);
       leg.castShadow = true;
       grp.add(leg);
       const shoe = new THREE.Mesh(
-        new THREE.BoxGeometry(0.12, 0.06, 0.16),
-        playerMat(ch.shoes || "#2b2d42", { flat: true })
+        new THREE.BoxGeometry(0.14, 0.06, 0.18),
+        playerMat(ch.shoes || "#333333", { flat: true })
       );
-      shoe.position.set(0, -0.14, 0.02);
+      shoe.position.set(0, -0.16, 0.02);
+      shoe.castShadow = true;
       grp.add(shoe);
       idle.add(grp);
     });
@@ -1601,74 +1605,126 @@
     const armL = new THREE.Group();
     const armR = new THREE.Group();
     [[-1, armL], [1, armR]].forEach(([side, grp]) => {
-      grp.position.set(side * 0.2, 0.36, 0);
+      grp.position.set(side * 0.22, 0.38, 0);
+      // short sleeve (shirt color)
+      const sleeve = new THREE.Mesh(
+        new THREE.BoxGeometry(0.11, 0.10, 0.12),
+        playerMat(ch.shirt || ch.body, { flat: true })
+      );
+      sleeve.position.set(side * 0.01, -0.02, 0);
+      sleeve.castShadow = true;
+      grp.add(sleeve);
+      // lower arm / hand (skin)
       const arm = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.18, 0.08),
+        new THREE.BoxGeometry(0.09, 0.14, 0.09),
         playerMat(ch.body, { flat: true })
       );
-      arm.position.set(0, -0.08, 0);
+      arm.position.set(side * 0.01, -0.14, 0);
       arm.castShadow = true;
       grp.add(arm);
       idle.add(grp);
     });
 
     const headG = new THREE.Group();
-    headG.position.y = 0.58;
+    headG.position.y = 0.62;
     idle.add(headG);
+
+    // Big blocky head (wider than torso — readable from behind/above cam)
     const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.26, 10, 8),
+      new THREE.BoxGeometry(0.44, 0.40, 0.40),
       playerMat(ch.body, { flat: true })
     );
+    head.position.y = 0.02;
     head.castShadow = true;
     headG.add(head);
-    const fringe = new THREE.Mesh(
-      new THREE.SphereGeometry(0.2, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.4),
+
+    // Blocky brown hair under / around cap brim
+    const hairFront = new THREE.Mesh(
+      new THREE.BoxGeometry(0.40, 0.10, 0.10),
       playerMat(ch.hair, { flat: true })
     );
-    fringe.position.set(0, 0.04, 0.02);
-    headG.add(fringe);
+    hairFront.position.set(0, 0.10, 0.18);
+    headG.add(hairFront);
+    const hairL = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.14, 0.28),
+      playerMat(ch.hair, { flat: true })
+    );
+    hairL.position.set(-0.20, 0.10, 0.02);
+    headG.add(hairL);
+    const hairR = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.14, 0.28),
+      playerMat(ch.hair, { flat: true })
+    );
+    hairR.position.set(0.20, 0.10, 0.02);
+    headG.add(hairR);
+    const hairBack = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.12, 0.08),
+      playerMat(ch.hair, { flat: true })
+    );
+    hairBack.position.set(0, 0.12, -0.18);
+    headG.add(hairBack);
+
+    // Cap crown (flat-top box, slightly tapered feel via width)
     const cap = new THREE.Mesh(
-      new THREE.SphereGeometry(0.24, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.52),
+      new THREE.BoxGeometry(0.46, 0.16, 0.42),
       playerMat(ch.cap || ch.accent, { flat: true })
     );
-    cap.position.y = 0.12;
+    cap.position.set(0, 0.26, -0.01);
     cap.castShadow = true;
     headG.add(cap);
+    // Cap bill (flat rectangle sticking forward)
     const bill = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.04, 0.18),
+      new THREE.BoxGeometry(0.36, 0.045, 0.20),
       playerMat(ch.capBill || ch.detail, { flat: true })
     );
-    bill.position.set(0, 0.08, 0.22);
+    bill.position.set(0, 0.18, 0.28);
     bill.castShadow = true;
     headG.add(bill);
+    // White top button
     const button = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04, 6, 5),
-      playerMat("#edf2f4", { flat: true })
+      new THREE.BoxGeometry(0.07, 0.05, 0.07),
+      playerMat("#ffffff", { flat: true })
     );
-    button.position.set(0, 0.32, 0);
+    button.position.set(0, 0.36, -0.01);
     headG.add(button);
+
+    // Large cute vertical eyes (dark) + white glints — Draft A look
     const eyes = [];
     [-1, 1].forEach((side) => {
       const eye = new THREE.Mesh(
-        new THREE.SphereGeometry(0.07, 6, 5),
-        playerMat(ch.eye)
+        new THREE.BoxGeometry(0.10, 0.16, 0.04),
+        playerMat(ch.pupil || "#1a1a1a", { flat: true })
       );
-      eye.position.set(side * 0.1, 0, 0.2);
+      eye.position.set(side * 0.11, 0.02, 0.21);
       headG.add(eye);
-      const pupil = new THREE.Mesh(
-        new THREE.SphereGeometry(0.035, 5, 4),
-        playerMat(ch.pupil)
-      );
-      pupil.position.set(side * 0.1, 0, 0.26);
-      headG.add(pupil);
       eyes.push(eye);
+      const glint = new THREE.Mesh(
+        new THREE.BoxGeometry(0.035, 0.04, 0.03),
+        playerMat(ch.eye || "#ffffff", { flat: true })
+      );
+      glint.position.set(side * 0.11 - 0.015, 0.06, 0.235);
+      headG.add(glint);
     });
+    // Simple smile line
     const smile = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.02, 0.02),
-      playerMat("#e76f51", { flat: true })
+      new THREE.BoxGeometry(0.12, 0.025, 0.03),
+      playerMat("#2b2d42", { flat: true })
     );
-    smile.position.set(0, -0.1, 0.24);
+    smile.position.set(0, -0.10, 0.22);
+    smile.rotation.z = 0.08;
     headG.add(smile);
+    const smileTipL = new THREE.Mesh(
+      new THREE.BoxGeometry(0.03, 0.025, 0.03),
+      playerMat("#2b2d42", { flat: true })
+    );
+    smileTipL.position.set(-0.07, -0.085, 0.22);
+    headG.add(smileTipL);
+    const smileTipR = new THREE.Mesh(
+      new THREE.BoxGeometry(0.03, 0.025, 0.03),
+      playerMat("#2b2d42", { flat: true })
+    );
+    smileTipR.position.set(0.07, -0.085, 0.22);
+    headG.add(smileTipR);
 
     root.userData.charId = ch.id;
     root.userData.idle = idle;
@@ -3147,71 +3203,67 @@
     const esy = eyeScaleY == null ? 1 : eyeScaleY;
     c.save();
     c.translate(x, y);
+    // Blocky Crossy-Road chibi (matches THREE mesh / Draft A)
+    // shirt torso
     c.fillStyle = ch.shirt || ch.accent;
-    c.fillRect(-radius * 0.42, radius * 0.05, radius * 0.84, radius * 0.7);
-    c.fillStyle = ch.belly;
-    c.beginPath();
-    c.ellipse(0, radius * 0.38, radius * 0.28, radius * 0.22, 0, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = ch.pants || ch.accent;
-    c.fillRect(-radius * 0.32, radius * 0.7, radius * 0.26, radius * 0.28);
-    c.fillRect(radius * 0.06, radius * 0.7, radius * 0.26, radius * 0.28);
-    c.fillStyle = ch.shoes || "#2b2d42";
-    c.fillRect(-radius * 0.34, radius * 0.92, radius * 0.3, radius * 0.14);
-    c.fillRect(radius * 0.04, radius * 0.92, radius * 0.3, radius * 0.14);
+    c.fillRect(-radius * 0.40, radius * 0.02, radius * 0.80, radius * 0.62);
+    // short sleeves
+    c.fillRect(-radius * 0.58, radius * 0.06, radius * 0.18, radius * 0.22);
+    c.fillRect(radius * 0.40, radius * 0.06, radius * 0.18, radius * 0.22);
+    // hands
     c.fillStyle = ch.body;
-    c.beginPath();
-    c.arc(0, -radius * 0.15, radius * 0.72, 0, Math.PI * 2);
-    c.fill();
+    c.fillRect(-radius * 0.56, radius * 0.26, radius * 0.14, radius * 0.18);
+    c.fillRect(radius * 0.42, radius * 0.26, radius * 0.14, radius * 0.18);
+    // pants
+    c.fillStyle = ch.pants || ch.accent;
+    c.fillRect(-radius * 0.34, radius * 0.62, radius * 0.28, radius * 0.30);
+    c.fillRect(radius * 0.06, radius * 0.62, radius * 0.28, radius * 0.30);
+    // shoes
+    c.fillStyle = ch.shoes || "#333333";
+    c.fillRect(-radius * 0.36, radius * 0.88, radius * 0.32, radius * 0.14);
+    c.fillRect(radius * 0.04, radius * 0.88, radius * 0.32, radius * 0.14);
+    // big blocky head
+    c.fillStyle = ch.body;
+    c.fillRect(-radius * 0.52, -radius * 0.72, radius * 1.04, radius * 0.82);
+    // hair under / sides of cap
     c.fillStyle = ch.hair;
-    c.beginPath();
-    c.ellipse(0, -radius * 0.45, radius * 0.55, radius * 0.22, 0, Math.PI, 0, true);
-    c.fill();
+    c.fillRect(-radius * 0.48, -radius * 0.42, radius * 0.96, radius * 0.18);
+    c.fillRect(-radius * 0.54, -radius * 0.48, radius * 0.12, radius * 0.30);
+    c.fillRect(radius * 0.42, -radius * 0.48, radius * 0.12, radius * 0.30);
+    // cap crown
     c.fillStyle = ch.cap || ch.accent;
-    c.beginPath();
-    c.ellipse(0, -radius * 0.55, radius * 0.7, radius * 0.42, 0, Math.PI, 0, true);
-    c.fill();
-    c.beginPath();
-    c.ellipse(0, -radius * 0.52, radius * 0.7, radius * 0.22, 0, 0, Math.PI * 2);
-    c.fill();
+    c.fillRect(-radius * 0.56, -radius * 0.92, radius * 1.12, radius * 0.38);
+    // bill
     c.fillStyle = ch.capBill || ch.detail;
-    c.beginPath();
-    c.ellipse(0, -radius * 0.38, radius * 0.55, radius * 0.16, 0, 0, Math.PI);
-    c.fill();
-    c.fillStyle = "#edf2f4";
-    c.beginPath();
-    c.arc(0, -radius * 0.9, radius * 0.1, 0, Math.PI * 2);
-    c.fill();
-    const eyeY = -radius * 0.2;
+    c.fillRect(-radius * 0.42, -radius * 0.58, radius * 0.84, radius * 0.14);
+    // white button
+    c.fillStyle = "#ffffff";
+    c.fillRect(-radius * 0.08, -radius * 0.98, radius * 0.16, radius * 0.12);
+    // tall dark eyes + white glints
+    const eyeY = -radius * 0.18;
     const eyeX = radius * 0.26;
-    c.fillStyle = ch.eye;
+    c.fillStyle = ch.pupil || "#1a1a1a";
     c.save();
     c.translate(-eyeX, eyeY);
     c.scale(1, esy);
-    c.beginPath();
-    c.arc(0, 0, radius * 0.16, 0, Math.PI * 2);
-    c.fill();
+    c.fillRect(-radius * 0.12, -radius * 0.18, radius * 0.24, radius * 0.36);
     c.restore();
     c.save();
     c.translate(eyeX, eyeY);
     c.scale(1, esy);
-    c.beginPath();
-    c.arc(0, 0, radius * 0.16, 0, Math.PI * 2);
-    c.fill();
+    c.fillRect(-radius * 0.12, -radius * 0.18, radius * 0.24, radius * 0.36);
     c.restore();
     if (esy > 0.4) {
-      c.fillStyle = ch.pupil;
-      const look = facing >= 0 ? 1 : -1;
-      c.beginPath();
-      c.arc(-eyeX + look * radius * 0.03, eyeY + radius * 0.02, radius * 0.08, 0, Math.PI * 2);
-      c.arc(eyeX + look * radius * 0.03, eyeY + radius * 0.02, radius * 0.08, 0, Math.PI * 2);
-      c.fill();
+      c.fillStyle = ch.eye || "#ffffff";
+      c.fillRect(-eyeX - radius * 0.06, eyeY - radius * 0.10, radius * 0.10, radius * 0.10);
+      c.fillRect(eyeX - radius * 0.06, eyeY - radius * 0.10, radius * 0.10, radius * 0.10);
     }
-    c.strokeStyle = "#e76f51";
-    c.lineWidth = Math.max(1.5, radius * 0.06);
+    // simple smile
+    c.strokeStyle = "#2b2d42";
+    c.lineWidth = Math.max(1.5, radius * 0.07);
     c.lineCap = "round";
     c.beginPath();
-    c.arc(0, radius * 0.02, radius * 0.18, 0.15 * Math.PI, 0.85 * Math.PI);
+    c.arc(0, radius * 0.05, radius * 0.16, 0.15 * Math.PI, 0.85 * Math.PI);
     c.stroke();
     c.restore();
   }
@@ -4642,6 +4694,14 @@
     AudioFX.uiClick();
     AudioFX.resetScoreTick();
     resetGame();
+  }
+
+
+  // Debug / screenshot: #shot or #autostart skips menu (Play still required otherwise)
+  if (/#(shot|autostart)\b/i.test(location.hash || "")) {
+    window.setTimeout(() => {
+      try { beginPlay(); } catch (_) {}
+    }, 400);
   }
 
   if (charPrevBtn) {

@@ -58,7 +58,7 @@ During a run, **Pause** (HUD ⏸ or **Esc**) freezes cars, hops, and score. A **
 
 Before each run you get a **main menu** with:
 
-- Title **Tomo Crossroad** · version **v1.21**
+- Title **Tomo Crossroad** · version **v1.23**
 - **Player name** field (max 12 chars, saved as `tomo-crossroad-player-name`; empty → **Player**)
 - **Cap Kid color** carousel — swipe or ◀ ▶ between 5 colorways (large preview + dots); persisted via `tomo-crossroad-character`
 - **Play**, **Leaderboard**, and **Options** buttons
@@ -139,6 +139,12 @@ Real **PerspectiveCamera** behind/above the player, looking forward along the ho
 - Cap Kid richer **idle** (breathe, weight shift, arm sway, blink) and **hop** squash-stretch / limb tuck on menu and in-run
 
 ## Changelog
+
+### v1.23
+- **Cap Kid remodel (Draft A / Sunset-hop)** — fully blocky Crossy-Road chibi: rectangular limbs, big cube head, flat blue baseball cap + white top button, brown hair under/around cap, tall cute dark eyes with white glints, light-cyan short sleeves, darker blue pants, dark shoes, peach skin
+- Shared mesh proportions for all 5 color variants (Blue / Red / Green / Purple / Yellow); Blue (`capkid`) palette retuned to Draft A colors
+- 2D menu preview redrawn to match the blocky mesh
+- Menu / Options / Pause / Leaderboard / cache-bust **v1.23**
 
 ### v1.21
 - **Invisible-menu tap steal fix** — root cause: `#overlay` without `.visible` used `pointer-events: none`, but `.panel` / buttons keep `pointer-events: auto`. In CSS, children with `auto` still receive hits when the parent is `none`, so after the menu faded out (opacity 0) Play/Options/etc. still sat over the screen on Android and stole taps from Left/GO/Right
